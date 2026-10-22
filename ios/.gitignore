@@ -1,0 +1,13 @@
+## XcodeGen-generiertes Projekt - die eigentliche .xcodeproj/Info.plist
+## entsteht lokal durch `xcodegen generate`, siehe docs/IOS.md.
+Wizzo.xcodeproj/
+Generated-Info.plist
+
+## Echte Zugangsdaten - nur die .example-Vorlage ist getrackt.
+Config/Secrets.xcconfig
+
+## Build-Artefakte
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
