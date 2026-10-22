@@ -33,12 +33,26 @@ struct HomeView: View {
                 .font(.caption.weight(.bold))
                 .foregroundColor(Theme.ivoryDim)
                 .padding(.bottom, 6)
-            Picker("Edition", selection: $viewModel.edition) {
-                Text("Classic").tag("classic")
-                Text("30 Jahre").tag("anniversary")
-            }
-            .pickerStyle(.segmented)
-            .padding(.bottom, 24)
+            // The "30 Jahre"-Edition's 9 special cards always deal together;
+            // 3 of them (Jongleur/Gleis 9¾/Hexe - rainbow7/rainbow9/witch) need
+            // multi-step pending-state UI the app doesn't have yet (see
+            // docs/IOS.md), so creating that room from here is disabled for
+            // now rather than risking a game that gets permanently stuck once
+            // one of those three is dealt and played. Joining an existing
+            // anniversary room (created from the web app) via code is still
+            // possible and carries that same risk - a known, documented gap.
+            Text("Classic")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .foregroundColor(Theme.bgDark)
+                .padding(.vertical, 8)
+                .background(Theme.gold)
+                .cornerRadius(Theme.Radius.sm)
+            Text("„30 Jahre“-Edition folgt in einer späteren Phase (3 der 9 Sonderkarten sind hier noch nicht umgesetzt)")
+                .font(.caption2)
+                .foregroundColor(Theme.ivoryDim)
+                .padding(.top, 6)
+                .padding(.bottom, 24)
 
             Button {
                 Task { await viewModel.createRoom() }

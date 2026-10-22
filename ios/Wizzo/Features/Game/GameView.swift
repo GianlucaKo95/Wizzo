@@ -3,6 +3,7 @@ import SwiftUI
 struct GameView: View {
     @StateObject private var viewModel: GameViewModel
     let onLeave: () -> Void
+    @State private var wizardfoolCardId: String?
 
     init(roomId: UUID, onLeave: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: GameViewModel(roomId: roomId))
@@ -23,6 +24,24 @@ struct GameView: View {
         }
         .task { await viewModel.start() }
         .onDisappear { viewModel.stop() }
+        .confirmationDialog(
+            "Ron Weasley spielen als…",
+            isPresented: Binding(
+                get: { wizardfoolCardId != nil },
+                set: { if !$0 { wizardfoolCardId = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Zauberer") { resolveWizardfool(choice: "wizard") }
+            Button("Narr") { resolveWizardfool(choice: "fool") }
+            Button("Abbrechen", role: .cancel) { wizardfoolCardId = nil }
+        }
+    }
+
+    private func resolveWizardfool(choice: String) {
+        guard let cardId = wizardfoolCardId else { return }
+        wizardfoolCardId = nil
+        Task { await viewModel.playWizardfool(cardId: cardId, choice: choice) }
     }
 
     private func content(room: Room) -> some View {
@@ -36,6 +55,8 @@ struct GameView: View {
             switch room.phase {
             case "choosingTrump":
                 trumpPicker
+            case "choosingWerewolf":
+                werewolfPicker
             case "bidding":
                 biddingArea(room: room)
             case "trickEnd":
@@ -194,6 +215,40 @@ struct GameView: View {
         .padding(.vertical, 10)
     }
 
+    /// Lupin/Werwolf: whoever was dealt it picks the suit that leads the
+    /// entire round (see chooseWerewolf in GameViewModel). Same picker shape
+    /// as trumpPicker, different target action and whoever it is isn't
+    /// necessarily the dealer.
+    private var werewolfPicker: some View {
+        VStack(spacing: 10) {
+            if viewModel.isMyTurn {
+                Text("🐺 Stichfarbe für die ganze Runde wählen")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(Theme.ivory)
+                HStack(spacing: 10) {
+                    ForEach(["red", "blue", "green", "yellow"], id: \.self) { suit in
+                        Button {
+                            Task { await viewModel.chooseWerewolf(suit) }
+                        } label: {
+                            Text(Theme.suitSymbol(suit))
+                                .font(.headline)
+                                .frame(width: 44, height: 44)
+                                .foregroundColor(Theme.bgDark)
+                                .background(Theme.suitColor(suit))
+                                .clipShape(Circle())
+                        }
+                        .disabled(viewModel.isSubmitting)
+                    }
+                }
+            } else {
+                Text("🐺 Wartet auf die Stichfarben-Wahl…")
+                    .font(.subheadline)
+                    .foregroundColor(Theme.ivoryDim)
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
     private func biddingArea(room: Room) -> some View {
         VStack(spacing: 10) {
             if viewModel.isMyTurn {
@@ -310,7 +365,15 @@ struct GameView: View {
                     CardChipView(card: card)
                         .onTapGesture {
                             guard canPlay, !viewModel.isSubmitting else { return }
-                            Task { await viewModel.playCard(card.id) }
+                            // Ron Weasley/Zauberer-oder-Narr needs a Wizard-or-
+                            // Fool choice before it can be sent to the server
+                            // (see playSpecial in GameViewModel) - every other
+                            // card, special or not, just plays directly.
+                            if card.specialType == "wizardfool" {
+                                wizardfoolCardId = card.id
+                            } else {
+                                Task { await viewModel.playCard(card.id) }
+                            }
                         }
                         .opacity(canPlay ? 1 : 0.6)
                 }

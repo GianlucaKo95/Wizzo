@@ -98,8 +98,23 @@ final class GameViewModel: ObservableObject {
         await submit("playCard", extra: ["cardId": cardId])
     }
 
+    /// Ron Weasley/Zauberer-oder-Narr: the only special card played through
+    /// `playSpecial` instead of plain `playCard` - the server resolves it as
+    /// a real Wizard or Fool depending on `choice` (index.ts, case
+    /// "playSpecial", sa === "wizardfool").
+    func playWizardfool(cardId: String, choice: String) async {
+        await submit("playSpecial", extra: ["specialAction": "wizardfool", "cardId": cardId, "choice": choice])
+    }
+
     func chooseTrump(_ suit: String) async {
         await submit("chooseTrump", extra: ["suit": suit])
+    }
+
+    /// Lupin/Werwolf: whoever is dealt it picks the suit that leads the
+    /// *entire round* (room.phase "choosingWerewolf", set once at deal time
+    /// - see dealRound() in index.ts), not just one trick.
+    func chooseWerewolf(_ suit: String) async {
+        await submit("chooseWerewolf", extra: ["suit": suit])
     }
 
     func nextRound() async {

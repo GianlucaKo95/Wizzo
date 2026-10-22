@@ -43,6 +43,38 @@ enum Theme {
         default: return ""
         }
     }
+
+    /// Mirrors specialConfigs in wizard/frontend/src/CardView.tsx (same
+    /// label/color per special card) - the native app shows text-only cards,
+    /// no illustrated card art pipeline yet (see docs/IOS.md), so this is the
+    /// entire visual treatment for a special card.
+    static func specialLabel(_ specialType: String) -> String {
+        switch specialType {
+        case "dragon": return "D"
+        case "fairy": return "✦"
+        case "witch": return "H"
+        case "werewolf": return "W"
+        case "vampire": return "V"
+        case "bomb": return "✕"
+        case "rainbow7": return "7½"
+        case "rainbow9": return "9¾"
+        default: return "?"
+        }
+    }
+
+    static func specialColor(_ specialType: String) -> Color {
+        switch specialType {
+        case "dragon": return Color(hex: 0xA8C0E8)
+        case "fairy": return Color(hex: 0xD2B4DE)
+        case "witch": return Color(hex: 0xC0392B)
+        case "werewolf": return Color(hex: 0xF7DC6F)
+        case "vampire": return Color(hex: 0x9B59B6)
+        case "bomb": return Color(hex: 0xE8DAEF)
+        case "rainbow7": return Color(hex: 0xF1C40F)
+        case "rainbow9": return Color(hex: 0xAED6F1)
+        default: return ivoryDim
+        }
+    }
 }
 
 extension Color {
