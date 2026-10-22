@@ -92,26 +92,6 @@ struct AuthView: View {
     }
 }
 
-private struct FlatFieldStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(12)
-            .background(Theme.bgPanel)
-            .foregroundColor(Theme.ivory)
-            .cornerRadius(Theme.Radius.sm)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.gold.opacity(0.2), lineWidth: 1)
-            )
-    }
-}
-
-private extension View {
-    func flatFieldStyle() -> some View {
-        modifier(FlatFieldStyle())
-    }
-}
-
 #Preview {
     AuthView().environmentObject(AppState())
 }

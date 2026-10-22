@@ -1,16 +1,13 @@
 import SwiftUI
 
 /// Tab shell, mirrors TabBar/TabKey in wizard/frontend/src/App.tsx (home,
-/// friends, stats, profile). Only Profil is wired to real data so far -
-/// see docs/IOS.md for what each tab still needs.
+/// friends, stats, profile). Home (create/join a room + lobby) and Profil
+/// are wired to real data - see docs/IOS.md for what each tab still needs.
 struct RootView: View {
     var body: some View {
         TabView {
-            ComingSoonView(
-                title: "Home",
-                subtitle: "Räume erstellen/beitreten und der Spieltisch selbst kommen in einer der nächsten Phasen."
-            )
-            .tabItem { Label("Home", systemImage: "house.fill") }
+            HomeView()
+                .tabItem { Label("Home", systemImage: "house.fill") }
 
             ComingSoonView(
                 title: "Freunde",
