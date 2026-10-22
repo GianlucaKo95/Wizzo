@@ -398,6 +398,9 @@ struct GameView: View {
                         Text("\(player.score ?? 0)")
                             .font(.caption.weight(.bold))
                             .foregroundColor(Theme.ivory)
+                        if let room = viewModel.room {
+                            handIndicator(for: player, room: room)
+                        }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -408,6 +411,32 @@ struct GameView: View {
             .padding(.horizontal, 16)
         }
         .padding(.bottom, 4)
+    }
+
+    /// Shows what's known about an opponent's hand: nothing for myself (my
+    /// own hand is the handArea below), their real card(s) if `visibleHand`
+    /// is non-null (Runde 1 "Indianer Poker" - the room_players_view
+    /// definition in 000_full_reset.sql only fills it in during round 1),
+    /// otherwise a plain face-down count. Only shown while a hand is
+    /// actually in play.
+    @ViewBuilder
+    private func handIndicator(for player: RoomPlayer, room: Room) -> some View {
+        let handVisiblePhases = ["choosingTrump", "choosingWerewolf", "bidding", "playing", "trickEnd"]
+        if player.userId == viewModel.currentUserId || !handVisiblePhases.contains(room.phase) {
+            EmptyView()
+        } else if let visible = player.visibleHand, !visible.isEmpty {
+            HStack(spacing: 2) {
+                ForEach(visible) { card in
+                    CardChipView(card: card)
+                        .scaleEffect(0.4)
+                        .frame(width: 18, height: 24)
+                }
+            }
+        } else if let count = player.handCount, count > 0 {
+            Text("🂠 ×\(count)")
+                .font(.caption2)
+                .foregroundColor(Theme.ivoryDim)
+        }
     }
 
     // MARK: - Trick area
@@ -798,29 +827,41 @@ struct GameView: View {
 
     private var handArea: some View {
         let canPlay = viewModel.room?.phase == "playing" && viewModel.isMyTurn
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(viewModel.myHand) { card in
-                    CardChipView(card: card)
-                        .onTapGesture {
-                            guard canPlay, !viewModel.isSubmitting else { return }
-                            // Ron Weasley/Zauberer-oder-Narr needs a Wizard-or-
-                            // Fool choice before it can be sent to the server
-                            // (see playSpecial in GameViewModel) - every other
-                            // card, special or not, just plays directly.
-                            if card.specialType == "wizardfool" {
-                                wizardfoolCardId = card.id
-                            } else if card.specialType == "rainbow7" || card.specialType == "rainbow9" {
-                                rainbowSuitCardId = card.id
-                            } else {
-                                Task { await viewModel.playCard(card.id) }
+        // Runde 1 "Indianer Poker": die eigene Hand wird verdeckt gezeigt
+        // (siehe faceDown={room.round === 1} in App.tsx) - man sieht also die
+        // eigene Karte nicht, wohl aber die der Mitspieler (scoreboard unten).
+        // Tappen/Ausspielen funktioniert unverändert positionsbasiert.
+        let faceDown = viewModel.room?.round == 1
+        return VStack(spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.myHand) { card in
+                        CardChipView(card: card, faceDown: faceDown)
+                            .onTapGesture {
+                                guard canPlay, !viewModel.isSubmitting else { return }
+                                // Ron Weasley/Zauberer-oder-Narr needs a Wizard-or-
+                                // Fool choice before it can be sent to the server
+                                // (see playSpecial in GameViewModel) - every other
+                                // card, special or not, just plays directly.
+                                if card.specialType == "wizardfool" {
+                                    wizardfoolCardId = card.id
+                                } else if card.specialType == "rainbow7" || card.specialType == "rainbow9" {
+                                    rainbowSuitCardId = card.id
+                                } else {
+                                    Task { await viewModel.playCard(card.id) }
+                                }
                             }
-                        }
-                        .opacity(canPlay ? 1 : 0.6)
+                            .opacity(canPlay ? 1 : 0.6)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
+            if faceDown {
+                Text("🔮 Indianer-Poker: Deine Karte bleibt verdeckt")
+                    .font(.caption2)
+                    .foregroundColor(Theme.ivoryDim)
+            }
         }
     }
 

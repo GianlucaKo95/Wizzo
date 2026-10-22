@@ -37,21 +37,34 @@ extension Card {
 struct CardChipView: View {
     let card: Card
     var isSelected: Bool = false
+    /// Round 1 "Indianer Poker": your own hand is dealt face down (you can't
+    /// see its value, only your opponents can) - mirrors `faceDown={room.round
+    /// === 1}` on the web's own-hand CardView. The card is still fully
+    /// tappable/playable at its normal position; only the face differs.
+    var faceDown: Bool = false
 
     private var showsSuitSymbol: Bool {
         card.suit != nil && card.specialType == nil
     }
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(card.label)
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
-            if showsSuitSymbol {
-                Text(Theme.suitSymbol(card.suit))
-                    .font(.system(size: 10, weight: .bold))
+        Group {
+            if faceDown {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(Theme.gold.opacity(0.4))
+            } else {
+                VStack(spacing: 2) {
+                    Text(card.label)
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    if showsSuitSymbol {
+                        Text(Theme.suitSymbol(card.suit))
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                }
+                .foregroundColor(card.displayColor)
             }
         }
-        .foregroundColor(card.displayColor)
         .frame(width: 44, height: 60)
         .background(Theme.bgPanel)
         .cornerRadius(Theme.Radius.sm)
