@@ -361,7 +361,7 @@ struct GameView: View {
         .padding(.bottom, 8)
     }
 
-    private func scoresheetRow<Cell: View>(label: String, labelColor: Color, cell: (RoomPlayer) -> Cell) -> some View {
+    private func scoresheetRow<Cell: View>(label: String, labelColor: Color, cell: @escaping (RoomPlayer) -> Cell) -> some View {
         HStack(spacing: 0) {
             Text(label)
                 .font(.caption.weight(.semibold))
