@@ -67,6 +67,13 @@ targets:
         # equivalent native call never silently crashes the app for lack of
         # a usage string (see docs/IOS.md).
         NSMicrophoneUsageDescription: "Wizzo benötigt Mikrofonzugriff für den optionalen Sprachchat während einer Partie."
+        # Wizzo nutzt nie Video/Kamera (reiner Audio-Sprachchat, siehe
+        # docs/IOS.md) - das gelinkte stasel/WebRTC-Framework referenziert
+        # aber Kamera-APIs (für WebRTC-Videoanrufe allgemein), was Apples
+        # statische Prüfung unabhängig von der tatsächlichen Nutzung als
+        # "Missing purpose string" zurückweist (ITMS-90683, echte Ablehnung
+        # eines App-Store-Connect-Uploads beim ersten TestFlight-Build).
+        NSCameraUsageDescription: "Wizzo verwendet keine Kamera. Dieser Hinweis wird vom verwendeten WebRTC-Framework benötigt, das allgemein Video-fähig ist, obwohl Wizzo nur Audio-Sprachchat nutzt."
         # Lets a voice chat already in progress keep sending/receiving audio
         # while the app is backgrounded - the actual reason this whole app
         # is native instead of a PWA wrapper (see docs/IOS.md).
