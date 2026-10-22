@@ -6,7 +6,7 @@ Wizzo wird komplett nativ als SwiftUI-App neu gebaut (nicht als Web-Wrapper) –
 
 Kurz zusammengefasst aus der Diskussion, die zu dieser Entscheidung geführt hat: ein reiner Wrapper (z. B. Capacitor) hätte den bestehenden Web-Code 1:1 übernommen, aber eben auch dessen Grenzen – kein wirklich natives Gefühl (Scrollen/Übergänge/Gesten bleiben Web), Sprachchat bricht im Hintergrund ab, Web-Push ist auf iOS unzuverlässig. Da ein echtes natives Gefühl gewünscht war und die PWA ohnehin nicht weiterbetrieben werden soll, baut die App stattdessen die komplette UI in SwiftUI neu, gegen **dasselbe, unveränderte Supabase-Backend** (Postgres/RLS/Realtime/Edge-Function) wie die Web-App – siehe [`ARCHITECTURE.md`](ARCHITECTURE.md) und [`DATABASE.md`](DATABASE.md) für das Backend, das hier 1:1 weiterverwendet wird.
 
-## Stand: Phase 1-7 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten, Spielblatt & Log, Indianer Poker)
+## Stand: Phase 1-8 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten, Spielblatt & Log, Indianer Poker, Reconnect)
 
 Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 
@@ -14,7 +14,7 @@ Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 - Supabase-Anbindung über das offizielle [`supabase-swift`](https://github.com/supabase/supabase-swift)-SDK (Auth, Postgrest, Realtime)
 - **Anmelden/Registrieren**: repliziert exakt die Logik aus `AuthScreen` in `wizard/frontend/src/App.tsx` – es gibt keine echte E-Mail, nur einen Namen; dahinter steht eine synthetische `<slug>@wizard.local`-Adresse mit einem abgeleiteten Standardpasswort, wenn keins gesetzt wird. **Das muss exakt übereinstimmen**, sonst können sich Web- und App-Nutzer nicht gegenseitig mit denselben Konten anmelden.
 - **Profil-Tab**: lädt die eigene `profiles`-Zeile, zeigt Name + Mitglied-seit, funktionierendes Abmelden.
-- **Home-Tab**: Raum erstellen (Edition wählbar – Classic oder "30 Jahre") oder per Code beitreten – ruft dieselben `createRoom`/`joinRoom`-Edge-Function-Aktionen auf wie die Web-App.
+- **Home-Tab**: Raum erstellen (Edition wählbar – Classic oder "30 Jahre") oder per Code beitreten – ruft dieselben `createRoom`/`joinRoom`-Edge-Function-Aktionen auf wie die Web-App. Beim Öffnen prüft `checkReconnect()` (Phase 8, mirrors `checkReconnect()` in `App.tsx`), ob der eigene `room_players`-Eintrag noch in einem nicht beendeten Raum steckt – falls ja, zeigt ein goldenes Banner den Raumcode mit "FORTSETZEN" (ruft einfach `joinRoom` mit dem bekannten Code erneut auf – die Edge Function lässt ein bestehendes Mitglied in jeder Phase wieder rein) und, nur wenn alle anderen Sitzplätze KI sind, zusätzlich "VERWERFEN" (ruft `leaveRoom` auf, das den Solo-Raum dann komplett löscht statt abzulehnen). Reconnect-Zustand lebt serverseitig (`room_players`-Mitgliedschaft), nicht lokal – maßgeblich für jedes Gerät.
 - **Lobby**: Live-Spielerliste (Supabase-Realtime-Channel auf `rooms`/`room_players`, plus 5s-Poll-Fallback wie im Web-Pendant), Host-Kennzeichnung, "Spiel starten" (ruft `startGame` auf, inkl. derselben KI-Auffüll-Logik bis 3 Sitzplätze), Verlassen.
 - **Spieltisch**: Trumpf wählen (wenn der Dealer einen Zauberer aufdeckt), bieten, Karten ausspielen, Stichanzeige, Rundenende mit Punktestand, "Nächste Runde"/"Nochmal spielen" (Host), KI-Züge (client-getriebenes `triggerAI` nach 2s Verzögerung, genau wie im Web-Pendant) und automatisches `clearTrick` nach 5s. Kartenanzeige ist bewusst nur textbasiert (Wert/Farbsymbol, kein Karten-Artwork) – eine eigene Asset-Pipeline ist nicht Teil dieser Phase.
 - **Alle 9 "30 Jahre"-Sonderkarten**:
@@ -28,9 +28,12 @@ Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 - **Runde-1-Sonderregel "Indianer Poker"** (Phase 7): im Scoreboard zeigt jeder Mitspieler-Eintrag jetzt einen Hand-Indikator – in Runde 1 die echte(n) Karte(n) (über `visible_hand`, das `room_players_view` nur in Runde 1 für fremde Zeilen befüllt, siehe `000_full_reset.sql`), sonst nur eine verdeckte Zählung ("🂠 ×N"). Die eigene Hand wird in Runde 1 umgekehrt verdeckt angezeigt (`CardChipView(faceDown:)`, mirrors `faceDown={room.round === 1}` in `App.tsx`) – Tippen/Ausspielen funktioniert unverändert positionsbasiert, nur die Kartenseite ist anders.
 - Tab-Leiste (Home/Freunde/Statistik/Profil, siehe `TabKey` in `App.tsx`) – Freunde/Statistik sind weiterhin ehrliche "Kommt noch"-Platzhalter, keine Fake-Daten.
 
+### Beim Reconnect-Abgleich entdeckt: `room_players`-RLS liefert bei der Web-App immer `dismissible: true`
+
+`checkReconnect()`'s zweite Abfrage (wer sitzt sonst noch am Tisch) läuft in `App.tsx` gegen die rohe `room_players`-Tabelle. Deren RLS-Policy `rp_select_own` (`000_full_reset.sql`) erlaubt aber **nur** `auth.uid() = user_id` – jede Zeile außer der eigenen wird dort serverseitig stillschweigend herausgefiltert, egal welcher Filter im Query steht. Dadurch ist `others` in der Web-App praktisch immer leer und `dismissible` praktisch immer `true`, unabhängig davon, ob wirklich noch ein Mensch am Tisch sitzt – `leaveRoom` selbst prüft das serverseitig aber ohnehin korrekt nochmal (`hasOtherHuman` in `index.ts`), insofern blieb das bisher folgenlos. Die native App fragt für diese eine Abfrage stattdessen `room_players_view` ab (dieselbe Quelle, die überall sonst für Mitspieler-Daten genutzt wird) und berechnet `dismissible` damit tatsächlich korrekt.
+
 Was **noch nicht** existiert (jeweils eigene, größere Phasen oder gezielte Nacharbeiten):
 - Kein client-seitiges Hervorheben spielbarer/unspielbarer Karten (der Server validiert ohnehin jeden Zug serverseitig und lehnt ungültige mit einer Fehlermeldung ab – das ist bewusst die einzige Fehlerquelle für Phase 3, um die KI-/Sonderkarten-Regellogik nicht ein zweites Mal im Client nachbauen zu müssen)
-- Automatisches Reconnect in ein bereits laufendes Spiel beim App-Start (die Web-App hat das, siehe `checkReconnect` in `App.tsx` - hier bewusst noch nicht repliziert, um die Phasen klein zu halten)
 - Zuschauer-Modus
 - Freunde (Liste, Anfragen, Einladungen, Freundesprofile, Raum-Einladungen aus der Lobby)
 - Statistik ("Letzte Partien", Trefferquote)
@@ -104,7 +107,12 @@ Jede weitere Phase bekommt ihren eigenen Ordner unter `Features/` (z. B. `Featur
 
 ## Nächste sinnvolle Phase
 
-Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar; Phase 6 hat Spielblatt und Log nachgerüstet, Phase 7 die Indianer-Poker-Anzeige. Der Spieltisch hat damit funktional Web-Parität erreicht. Sinnvolle nächste Schritte, grob nach Aufwand sortiert:
+Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar; Phase 6 hat Spielblatt und Log nachgerüstet, Phase 7 die Indianer-Poker-Anzeige, Phase 8 das Reconnect. Der Spieltisch samt Lobby/Reconnect hat damit funktional Web-Parität erreicht. Was jetzt noch fehlt, sind die großen, eigenständigen Feature-Blöcke – jeder vermutlich mindestens eine eigene Phase, grob nach Aufwand sortiert:
 
-- **Automatisches Reconnect** in ein bereits laufendes Spiel beim App-Start (`checkReconnect`-Äquivalent) – bisher bewusst noch nicht repliziert, um die Phasen klein zu halten.
-- Danach die größeren, eigenständigen Features: Zuschauer-Modus, Freunde, Statistik, digitaler Rechenblock, Sprachchat (WebRTC), echte Push-Benachrichtigungen (APNs), Avatar-Upload.
+- **Zuschauer-Modus**
+- **Freunde** (Liste, Anfragen, Einladungen, Freundesprofile, Raum-Einladungen aus der Lobby) – wegen des Umfangs wahrscheinlich 2 Phasen
+- **Statistik** ("Letzte Partien", Trefferquote)
+- **Digitaler Rechenblock** (eigenständiges Feature für offline/physische Partien, nicht zu verwechseln mit dem Spielblatt aus Phase 6 – siehe `ManualScoreboardScreen` in `docs/ARCHITECTURE.md`)
+- **Sprachchat** (WebRTC, inkl. Hintergrund-Audio) – der ursprüngliche Hauptgrund für den nativen Weg, vermutlich der aufwändigste Block
+- **Echte Push-Benachrichtigungen** (APNs)
+- **Avatar-Upload**

@@ -8,12 +8,16 @@ struct HomeView: View {
             if let roomId = viewModel.activeRoomId {
                 LobbyView(roomId: roomId) {
                     viewModel.activeRoomId = nil
+                    Task { await viewModel.checkReconnect() }
                 }
             } else {
                 content
             }
         }
-        .task { await viewModel.loadUsername() }
+        .task {
+            await viewModel.loadUsername()
+            await viewModel.checkReconnect()
+        }
     }
 
     private var content: some View {
@@ -28,6 +32,11 @@ struct HomeView: View {
                 .foregroundColor(Theme.ivoryDim)
                 .padding(.top, 6)
                 .padding(.bottom, 30)
+
+            if let info = viewModel.reconnectInfo {
+                reconnectBanner(info)
+                    .padding(.bottom, 24)
+            }
 
             Text("EDITION")
                 .font(.caption.weight(.bold))
@@ -84,6 +93,57 @@ struct HomeView: View {
         .padding(.horizontal, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.bgDark.ignoresSafeArea())
+    }
+
+    /// Mirrors the gold "Laufende Partie" banner in App.tsx's LobbyScreen -
+    /// shown whenever `checkReconnect()` finds an active room_players
+    /// membership. "FORTSETZEN" just re-joins; "VERWERFEN" (only offered
+    /// when `dismissible`) abandons a solo-vs-AI game instead of waiting on
+    /// the server's inactivity reaper.
+    private func reconnectBanner(_ info: ReconnectInfo) -> some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LAUFENDE PARTIE")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(Theme.bgDark.opacity(0.75))
+                    Text(info.code)
+                        .font(.system(size: 26, weight: .heavy))
+                        .foregroundColor(Theme.bgDark)
+                }
+                Spacer()
+                Button {
+                    Task { await viewModel.reconnect() }
+                } label: {
+                    Text(viewModel.isLoading ? "…" : "FORTSETZEN →")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(Theme.goldLight)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(Theme.bgDark)
+                }
+                .disabled(viewModel.isLoading)
+            }
+            if info.dismissible {
+                Button {
+                    Task { await viewModel.dismissReconnect() }
+                } label: {
+                    Text(viewModel.isDismissingReconnect ? "Wird verworfen…" : "VERWERFEN")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(Theme.bgDark.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.bgDark.opacity(0.4), lineWidth: 1)
+                        )
+                }
+                .disabled(viewModel.isDismissingReconnect)
+            }
+        }
+        .padding(14)
+        .background(Theme.gold)
+        .cornerRadius(Theme.Radius.md)
     }
 
     private func primaryLabel(_ text: String) -> some View {
