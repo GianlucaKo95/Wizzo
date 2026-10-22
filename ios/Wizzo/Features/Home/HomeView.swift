@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = HomeViewModel()
+    @State private var showingRechenblock = false
 
     var body: some View {
         Group {
@@ -11,6 +12,8 @@ struct HomeView: View {
                     viewModel.activeRoomId = nil
                     Task { await viewModel.checkReconnect() }
                 }
+            } else if showingRechenblock {
+                RechenblockView { showingRechenblock = false }
             } else {
                 content
             }
@@ -96,6 +99,21 @@ struct HomeView: View {
             }
 
             Spacer()
+
+            Button {
+                showingRechenblock = true
+            } label: {
+                Text("RECHENBLOCK")
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .foregroundColor(Theme.ivory)
+                    .padding(.vertical, 12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .stroke(Theme.ivoryDim.opacity(0.4), lineWidth: 1)
+                    )
+            }
+            .padding(.bottom, 10)
         }
         .padding(.horizontal, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
