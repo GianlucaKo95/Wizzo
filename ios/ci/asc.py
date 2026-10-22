@@ -45,13 +45,42 @@ def api(method, path, body=None):
         print(f"API {method} {path} -> {e.code}: {e.read().decode()[:600]}", file=sys.stderr)
         raise SystemExit(40)
 
+def api_status(method, path, body):
+    """Wie api(), aber gibt (http_status, decoded_body) zurück statt bei
+    einem Fehler sofort abzubrechen - nur für Aufrufe, die einen bestimmten
+    Fehlercode selbst behandeln wollen (siehe create()'s 409-Retry)."""
+    req = urllib.request.Request(BASE + path, method=method, data=json.dumps(body).encode(),
+                                 headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
 def create(workdir, bundle_identifier, profile_name):
     os.makedirs(workdir, exist_ok=True)
     key, csr = f"{workdir}/key.pem", f"{workdir}/req.csr"
     subprocess.run(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", csr,
                     "-subj", "/CN=Wizzo CI/O=Wizzo/C=DE"], check=True, capture_output=True)
-    cert = api("POST", "/v1/certificates", {"data": {"type": "certificates", "attributes": {
-        "certificateType": "DISTRIBUTION", "csrContent": open(csr).read()}}})["data"]
+    cert_body = {"data": {"type": "certificates", "attributes": {
+        "certificateType": "DISTRIBUTION", "csrContent": open(csr).read()}}}
+    status, resp = api_status("POST", "/v1/certificates", cert_body)
+    if status == 409:
+        # Ein vorheriger CI-Lauf hat sein Zertifikat noch innerhalb der
+        # 2-Stunden-Schonfrist von purge() (siehe dort) - Apple erlaubt kein
+        # zweites gleichzeitig aktives. Bis hierhin hat ein früherer Lauf
+        # sein Archiv/Export/Upload immer schon abgeschlossen (die
+        # concurrency-Gruppe des Workflows serialisiert Läufe), es gibt also
+        # nichts mehr in der Verarbeitung, dessen Signatur ein sofortiges
+        # Löschen ungültig machen könnte - purge erzwingen und einmal erneut
+        # versuchen, statt den ganzen Lauf fehlschlagen zu lassen.
+        print("Zertifikat-Konflikt (409) - räume alte CI-Zertifikate auf und versuche es erneut", file=sys.stderr)
+        purge(max_age_seconds=0)
+        status, resp = api_status("POST", "/v1/certificates", cert_body)
+    if status != 201:
+        print(f"API POST /v1/certificates -> {status}: {json.dumps(resp)[:600]}", file=sys.stderr)
+        raise SystemExit(40)
+    cert = resp["data"]
     open(f"{workdir}/cert.der", "wb").write(base64.b64decode(cert["attributes"]["certificateContent"]))
     print("Zertifikat:", cert["attributes"].get("name"), cert["attributes"].get("expirationDate"))
 
