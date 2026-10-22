@@ -4,6 +4,8 @@ Wizzo ist eine Online-Multiplayer-Umsetzung des Stichkartenspiels **Wizard** fü
 
 Das Karten-Artwork und die Sonderkarten sind Harry-Potter-thematisiert (Häuser, Zauberer-/Narr-Charaktere, Sonderkarten wie "Bellatrix" für die Hexe). Das ist ein privates Fan-Projekt für den Eigengebrauch – nicht offiziell, nicht kommerziell, keine Verbindung zu Rechteinhabern.
 
+> **iOS-App in Arbeit**: Wizzo wird aktuell zusätzlich als eigenständige, komplett native SwiftUI-App neu gebaut (kein Web-Wrapper) – sie soll die PWA/Home-Assistant-Weboberfläche langfristig ablösen. Stand, Architektur und Setup: [`docs/IOS.md`](docs/IOS.md). Bis dahin ist die hier beschriebene Web-App/PWA weiterhin der produktive Stand.
+
 ## Inhalt
 
 - [Features](#features)
@@ -85,6 +87,10 @@ Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 │   ├── config.yaml
 │   ├── Dockerfile                #   Alpine + coturn
 │   └── run.sh                    #   liest Add-on-Optionen, startet turnserver
+├── ios/                         # native SwiftUI-App (in Arbeit, siehe docs/IOS.md)
+│   ├── project.yml               #   XcodeGen-Manifest statt eingecheckter .xcodeproj
+│   ├── Config/Secrets.example.xcconfig
+│   └── Wizzo/                     #   App/, Models/, Services/, Features/
 ├── supabase/
 │   ├── config.toml               # lokale Supabase-CLI-Konfiguration
 │   ├── migrations/               # 000…022, fortlaufend, siehe docs/DATABASE.md
@@ -150,6 +156,7 @@ Datenbank-Migrationen werden **nicht** automatisch über CI ausgerollt – die w
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) – Systemarchitektur im Detail: Frontend-Aufbau, Edge-Function-Aktionen, Realtime-Modell, Sprachchat/TURN, Push, PWA
 - [`docs/DATABASE.md`](docs/DATABASE.md) – Tabellen, Views, RLS-Modell, vollständige Migrationshistorie
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) – Setup, Umgebungsvariablen/Secrets, lokaler Supabase-Stack, Konventionen
+- [`docs/IOS.md`](docs/IOS.md) – die native SwiftUI-App: Stand, Architektur, Setup auf dem Mac, Phasen-Roadmap
 
 ## Status & Lizenz
 

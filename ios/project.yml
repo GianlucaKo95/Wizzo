@@ -1,0 +1,54 @@
+name: Wizzo
+
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+# Secrets.xcconfig (gitignored, copy from Secrets.example.xcconfig) supplies
+# SUPABASE_URL/SUPABASE_ANON_KEY as build settings, the same split as
+# wizard/frontend/.env.example - real values never land in source control.
+configFiles:
+  Debug: Config/Secrets.xcconfig
+  Release: Config/Secrets.xcconfig
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+
+targets:
+  Wizzo:
+    type: application
+    platform: iOS
+    sources:
+      - Wizzo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gianlucako95.wizzo
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_ASSET_PATHS: ""
+    info:
+      path: Generated-Info.plist
+      properties:
+        CFBundleDisplayName: Wizzo
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Voice chat later needs this - adding it now so a getUserMedia-
+        # equivalent native call never silently crashes the app for lack of
+        # a usage string (see docs/IOS.md).
+        NSMicrophoneUsageDescription: "Wizzo benötigt Mikrofonzugriff für den optionalen Sprachchat während einer Partie."
+        ITSAppUsesNonExemptEncryption: false
+        SUPABASE_URL: "$(SUPABASE_URL)"
+        SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
+    dependencies:
+      - package: Supabase
+        product: Supabase
