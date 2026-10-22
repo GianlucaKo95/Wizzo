@@ -258,7 +258,7 @@ async function getApnsProviderToken(): Promise<string | null> {
 async function sendApnsPush(supabase, deviceToken, title, body) {
   const jwt = await getApnsProviderToken();
   if (!jwt) return;
-  const bundleId = "com.gianlucako95.wizzo"; // PRODUCT_BUNDLE_IDENTIFIER in project.yml, not secret
+  const bundleId = "de.koeven.wizzo"; // PRODUCT_BUNDLE_IDENTIFIER in project.yml, not secret
   const host = Deno.env.get("APNS_ENV") === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
   try {
     const res = await fetch(`https://${host}/3/device/${deviceToken}`, {

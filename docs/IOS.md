@@ -98,7 +98,7 @@ open Wizzo.xcodeproj
 
 In Xcode:
 1. Target **Wizzo** → **Signing & Capabilities** → dein Apple-Developer-Team wählen.
-2. **Bundle Identifier** prüfen: `com.gianlucako95.wizzo` (in `project.yml` gesetzt) – muss mit einer App-ID in [App Store Connect](https://appstoreconnect.apple.com/) übereinstimmen.
+2. **Bundle Identifier** prüfen: `de.koeven.wizzo` (in `project.yml` gesetzt) – muss mit einer App-ID in [App Store Connect](https://appstoreconnect.apple.com/) übereinstimmen.
 3. Simulator oder eigenes Gerät wählen, ▶️.
 
 Nach jeder Änderung an `project.yml` (neues Target-Setting, neue Dependency, …): `xcodegen generate` erneut ausführen. Neue `.swift`-Dateien im `Wizzo/`-Ordner werden von XcodeGen automatisch erkannt (keine manuelle "Add to target"-Pflege).
