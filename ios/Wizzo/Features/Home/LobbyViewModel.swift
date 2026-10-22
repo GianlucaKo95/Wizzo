@@ -5,6 +5,7 @@ import Supabase
 struct InviteCandidate: Identifiable {
     let id: UUID
     let username: String
+    let avatarUrl: String?
 }
 
 @MainActor
@@ -18,6 +19,7 @@ final class LobbyViewModel: ObservableObject {
     @Published var inviteCandidates: [InviteCandidate]?
     @Published var invitedIds: Set<UUID> = []
     @Published var inviteSendingId: UUID?
+    @Published var avatarUrls: [UUID: String] = [:]
 
     private var myUsername: String?
 
@@ -75,6 +77,7 @@ final class LobbyViewModel: ObservableObject {
                 .value
             self.room = room
             self.players = players
+            await loadAvatars(for: players.compactMap(\.userId))
             // Once the game actually starts, GameView takes over with its
             // own Realtime watch/poll - no point running two for the same
             // room (wasteful, not incorrect, but easy to avoid).
@@ -84,6 +87,19 @@ final class LobbyViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// `room_players_view` doesn't carry `avatar_url` - mirrors the web's
+    /// own separate `profiles`-by-id batch fetch for seat avatars.
+    private func loadAvatars(for userIds: [UUID]) async {
+        guard !userIds.isEmpty else { return }
+        let profiles: [Profile] = (try? await SupabaseService.client
+            .from("profiles")
+            .select("id, username, avatar_url")
+            .in("id", values: Array(Set(userIds)))
+            .execute()
+            .value) ?? []
+        for profile in profiles { avatarUrls[profile.id] = profile.avatarUrl }
     }
 
     func startGame() async {
@@ -142,11 +158,11 @@ final class LobbyViewModel: ObservableObject {
             guard !otherIds.isEmpty else { inviteCandidates = []; return }
             let profiles: [Profile] = try await SupabaseService.client
                 .from("profiles")
-                .select("id, username")
+                .select("id, username, avatar_url")
                 .in("id", values: otherIds)
                 .execute()
                 .value
-            inviteCandidates = profiles.map { InviteCandidate(id: $0.id, username: $0.username) }
+            inviteCandidates = profiles.map { InviteCandidate(id: $0.id, username: $0.username, avatarUrl: $0.avatarUrl) }
         } catch {
             inviteCandidates = []
         }

@@ -139,14 +139,7 @@ struct LobbyView: View {
                         .padding(.top, 18)
                     ForEach(invitable) { candidate in
                         HStack(spacing: 10) {
-                            Circle()
-                                .fill(Theme.accent)
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Text(candidate.username.prefix(1).uppercased())
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundColor(Theme.goldLight)
-                                )
+                            AvatarView(url: candidate.avatarUrl, name: candidate.username, size: 24)
                             Text(candidate.username)
                                 .font(.subheadline)
                                 .foregroundColor(Theme.ivory)
@@ -177,14 +170,11 @@ struct LobbyView: View {
                 .frame(width: 16)
 
             ZStack(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(Theme.accent)
-                    .frame(width: 26, height: 26)
-                    .overlay(
-                        Text((player.aiName ?? "?").prefix(1).uppercased())
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(Theme.goldLight)
-                    )
+                AvatarView(
+                    url: player.userId.flatMap { viewModel.avatarUrls[$0] },
+                    name: player.aiName ?? "?",
+                    size: 26
+                )
                 if !player.isAi {
                     Circle()
                         .fill(player.connected ? Theme.success : Theme.ivoryDim.opacity(0.3))

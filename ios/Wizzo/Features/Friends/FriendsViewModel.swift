@@ -55,6 +55,7 @@ struct FriendActiveRoom: Codable, Identifiable {
 final class FriendsViewModel: ObservableObject {
     @Published var rows: [FriendRow] = []
     @Published var usernames: [UUID: String] = [:]
+    @Published var avatarUrls: [UUID: String] = [:]
     @Published var isLoaded = false
     @Published var usernameInput = ""
     @Published var isSending = false
@@ -81,6 +82,10 @@ final class FriendsViewModel: ObservableObject {
 
     func name(for userId: UUID) -> String {
         usernames[userId] ?? "…"
+    }
+
+    func avatarUrl(for userId: UUID) -> String? {
+        avatarUrls[userId]
     }
 
     func activeRoom(for userId: UUID) -> FriendActiveRoom? {
@@ -153,11 +158,14 @@ final class FriendsViewModel: ObservableObject {
             guard !otherIds.isEmpty else { return }
             let profiles: [Profile] = try await SupabaseService.client
                 .from("profiles")
-                .select("id, username")
+                .select("id, username, avatar_url")
                 .in("id", values: Array(otherIds))
                 .execute()
                 .value
-            for profile in profiles { usernames[profile.id] = profile.username }
+            for profile in profiles {
+                usernames[profile.id] = profile.username
+                avatarUrls[profile.id] = profile.avatarUrl
+            }
         } catch {
             isLoaded = true
         }

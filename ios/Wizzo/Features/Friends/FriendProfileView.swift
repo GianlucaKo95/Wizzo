@@ -6,6 +6,7 @@ import SwiftUI
 struct FriendProfileView: View {
     let friendId: UUID
     let friendName: String
+    let friendAvatarUrl: String?
     let onBack: () -> Void
 
     @StateObject private var viewModel = StatsViewModel()
@@ -49,14 +50,7 @@ struct FriendProfileView: View {
 
     private var profileHeader: some View {
         HStack(spacing: 14) {
-            Circle()
-                .fill(Theme.accent)
-                .frame(width: 60, height: 60)
-                .overlay(
-                    Text(friendName.prefix(1).uppercased())
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(Theme.goldLight)
-                )
+            AvatarView(url: friendAvatarUrl, name: friendName, size: 60)
             VStack(alignment: .leading, spacing: 3) {
                 Text(friendName)
                     .font(.system(size: 20, weight: .heavy))
@@ -86,5 +80,5 @@ private struct CreatedAtRow: Codable {
 }
 
 #Preview {
-    FriendProfileView(friendId: UUID(), friendName: "Spieler") {}
+    FriendProfileView(friendId: UUID(), friendName: "Spieler", friendAvatarUrl: nil) {}
 }

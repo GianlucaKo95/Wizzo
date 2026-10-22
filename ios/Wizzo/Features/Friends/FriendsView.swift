@@ -4,7 +4,7 @@ struct FriendsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = FriendsViewModel()
     @State private var pendingRemoval: FriendRow?
-    @State private var viewingFriend: (id: UUID, name: String)?
+    @State private var viewingFriend: (id: UUID, name: String, avatarUrl: String?)?
 
     var body: some View {
         Group {
@@ -13,7 +13,7 @@ struct FriendsView: View {
                     viewModel.spectatingRoomId = nil
                 }
             } else if let friend = viewingFriend {
-                FriendProfileView(friendId: friend.id, friendName: friend.name) {
+                FriendProfileView(friendId: friend.id, friendName: friend.name, friendAvatarUrl: friend.avatarUrl) {
                     viewingFriend = nil
                 }
             } else {
@@ -161,7 +161,7 @@ struct FriendsView: View {
                     let subtitle = activeRoom.map { "Spielt gerade · Runde \($0.round ?? 0)" }
                         ?? (appState.onlineUserIds.contains(otherId) ? "Online" : "Offline")
                     friendRow(row, subtitle: subtitle, onTapProfile: {
-                        viewingFriend = (otherId, viewModel.name(for: otherId))
+                        viewingFriend = (otherId, viewModel.name(for: otherId), viewModel.avatarUrl(for: otherId))
                     }) {
                         HStack(spacing: 8) {
                             if let activeRoom {
@@ -224,14 +224,7 @@ struct FriendsView: View {
     ) -> some View {
         let otherId = viewModel.otherUserId(row)
         return HStack(spacing: 10) {
-            Circle()
-                .fill(Theme.accent)
-                .frame(width: 28, height: 28)
-                .overlay(
-                    Text(viewModel.name(for: otherId).prefix(1).uppercased())
-                        .font(.caption2.weight(.bold))
-                        .foregroundColor(Theme.goldLight)
-                )
+            AvatarView(url: viewModel.avatarUrl(for: otherId), name: viewModel.name(for: otherId), size: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text(viewModel.name(for: otherId))
                     .font(.subheadline.weight(.semibold))

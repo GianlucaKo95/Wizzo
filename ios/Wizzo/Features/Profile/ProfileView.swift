@@ -1,12 +1,13 @@
 import SwiftUI
+import PhotosUI
 
 /// First real end-to-end slice: fetches the signed-in user's own `profiles`
 /// row (same broad `gs_select`-style read access the web app relies on, see
-/// docs/DATABASE.md) and offers a working sign-out. Avatar upload, friend
-/// profiles, etc. are later phases - see docs/IOS.md.
+/// docs/DATABASE.md), a working sign-out, and avatar upload (Phase 14).
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = ProfileViewModel()
+    @State private var pickedPhoto: PhotosPickerItem?
 
     var body: some View {
         VStack(spacing: 20) {
@@ -16,14 +17,26 @@ struct ProfileView: View {
                 ProgressView().tint(Theme.gold)
             } else if let profile = viewModel.profile {
                 VStack(spacing: 10) {
-                    Circle()
-                        .fill(Theme.accent)
-                        .frame(width: 72, height: 72)
-                        .overlay(
-                            Text(profile.username.prefix(1).uppercased())
-                                .font(.title.weight(.bold))
-                                .foregroundColor(Theme.ivory)
-                        )
+                    ZStack(alignment: .bottomTrailing) {
+                        AvatarView(url: profile.avatarUrl, name: profile.username, size: 72)
+                        if viewModel.isUploadingAvatar {
+                            ProgressView().tint(Theme.gold)
+                        } else {
+                            PhotosPicker(selection: $pickedPhoto, matching: .images) {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(Theme.gold)
+                                    .background(Circle().fill(Theme.bgDark))
+                            }
+                        }
+                    }
+                    .onChange(of: pickedPhoto) { item in
+                        guard let item else { return }
+                        Task {
+                            await viewModel.uploadAvatar(item)
+                            pickedPhoto = nil
+                        }
+                    }
                     Text(profile.username)
                         .font(.title3.weight(.bold))
                         .foregroundColor(Theme.ivory)
@@ -31,6 +44,17 @@ struct ProfileView: View {
                         Text("Dabei seit \(createdAt.formatted(.dateTime.month(.wide).year()))")
                             .font(.caption)
                             .foregroundColor(Theme.ivoryDim)
+                    }
+                    if profile.avatarUrl != nil {
+                        Button("Profilbild entfernen") { Task { await viewModel.removeAvatar() } }
+                            .font(.caption)
+                            .foregroundColor(Theme.ivoryDim)
+                            .disabled(viewModel.isUploadingAvatar)
+                    }
+                    if let avatarMessage = viewModel.avatarMessage {
+                        Text(avatarMessage.text)
+                            .font(.caption)
+                            .foregroundColor(avatarMessage.isError ? Theme.error : Theme.success)
                     }
                 }
             } else if let errorMessage = viewModel.errorMessage {
