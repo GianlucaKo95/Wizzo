@@ -2,6 +2,10 @@ import SwiftUI
 
 struct GameView: View {
     @StateObject private var viewModel: GameViewModel
+    // Passed down from LobbyView, not owned here - see VoiceChatManager's
+    // doc comment for why the connection has to survive this view's own
+    // mount/unmount across phase transitions.
+    @ObservedObject var voice: VoiceChatManager
     let onLeave: () -> Void
     @State private var wizardfoolCardId: String?
     @State private var rainbowSuitCardId: String?
@@ -10,8 +14,9 @@ struct GameView: View {
     @State private var showLog = false
     @State private var showScoresheet = false
 
-    init(roomId: UUID, onLeave: @escaping () -> Void) {
+    init(roomId: UUID, onLeave: @escaping () -> Void, voice: VoiceChatManager) {
         _viewModel = StateObject(wrappedValue: GameViewModel(roomId: roomId))
+        self.voice = voice
         self.onLeave = onLeave
     }
 
@@ -200,6 +205,7 @@ struct GameView: View {
     /// Symbols (see AuthView for the existing precedent in this app).
     private var toolbarRow: some View {
         HStack(spacing: 18) {
+            voiceControls
             Spacer()
             Button {
                 showLog = true
@@ -219,6 +225,31 @@ struct GameView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+    }
+
+    /// Compact icon-only pair instead of the Lobby's big labeled buttons -
+    /// a text button here would cover handcards, same reasoning App.tsx
+    /// gives for using a small header icon during an active game instead of
+    /// the Warteraum's full-width card.
+    @ViewBuilder
+    private var voiceControls: some View {
+        Button {
+            if voice.enabled { voice.toggleMute() } else { Task { await voice.enableVoice() } }
+        } label: {
+            Image(systemName: voice.enabled && !voice.muted ? "mic.fill" : "mic.slash.fill")
+                .font(.system(size: 13))
+                .foregroundColor(voice.enabled && !voice.muted ? Theme.success : Theme.ivoryDim)
+        }
+        .disabled(voice.connecting)
+        if voice.enabled {
+            Button {
+                Task { await voice.disableVoice() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.ivoryDim)
+            }
+        }
     }
 
     private var logSheet: some View {
@@ -398,6 +429,11 @@ struct GameView: View {
                         Text("\(player.score ?? 0)")
                             .font(.caption.weight(.bold))
                             .foregroundColor(Theme.ivory)
+                        if let userId = player.userId, voice.participantIds.contains(userId) {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(Theme.ivoryDim)
+                        }
                         if let room = viewModel.room {
                             handIndicator(for: player, room: room)
                         }
@@ -877,5 +913,5 @@ struct GameView: View {
 }
 
 #Preview {
-    GameView(roomId: UUID()) {}
+    GameView(roomId: UUID(), onLeave: {}, voice: VoiceChatManager(roomId: UUID()))
 }

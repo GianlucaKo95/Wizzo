@@ -2,11 +2,17 @@ import SwiftUI
 
 struct LobbyView: View {
     @StateObject private var viewModel: LobbyViewModel
+    // Owned here, not in GameView - mirrors App.tsx's useVoiceChat living in
+    // LobbyScreen rather than GameRoom, specifically so the connection
+    // survives the lobby→game phase switch below instead of unmounting
+    // with it (see VoiceChatManager's own doc comment).
+    @StateObject private var voice: VoiceChatManager
     let roomId: UUID
     let onLeave: () -> Void
 
     init(roomId: UUID, onLeave: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: LobbyViewModel(roomId: roomId))
+        _voice = StateObject(wrappedValue: VoiceChatManager(roomId: roomId))
         self.roomId = roomId
         self.onLeave = onLeave
     }
@@ -22,7 +28,7 @@ struct LobbyView: View {
             } else if viewModel.room != nil {
                 // Once the host starts the game, this view's own Realtime
                 // watch is no longer needed - GameView runs its own.
-                GameView(roomId: roomId, onLeave: onLeave)
+                GameView(roomId: roomId, onLeave: onLeave, voice: voice)
             } else {
                 ComingSoonView(title: "Raum nicht gefunden", subtitle: viewModel.errorMessage ?? "")
             }
@@ -31,7 +37,10 @@ struct LobbyView: View {
             await viewModel.start()
             await viewModel.loadInviteCandidates()
         }
-        .onDisappear { viewModel.stop() }
+        .onDisappear {
+            viewModel.stop()
+            Task { await voice.disableVoice() }
+        }
     }
 
     private func lobbyContent(room: Room) -> some View {
@@ -83,6 +92,8 @@ struct LobbyView: View {
             }
 
             invitePicker
+
+            voiceSection
 
             Spacer()
 
@@ -159,6 +170,92 @@ struct LobbyView: View {
                 }
             }
         }
+    }
+
+    /// Mirrors the big "Sprachchat aktivieren" card in LobbyScreen's
+    /// Warteraum (App.tsx) - once enabled, a participant row per connected
+    /// peer (name + per-peer mute, no speaking-color indicator, see
+    /// VoiceChatManager) plus Live/Stumm and leave controls.
+    @ViewBuilder
+    private var voiceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if voice.enabled, !voice.participantIds.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(voice.participantIds), id: \.self) { id in
+                        HStack(spacing: 6) {
+                            Image(systemName: "mic.fill")
+                                .font(.caption2)
+                                .foregroundColor(Theme.ivoryDim)
+                            Text(nameFor(userId: id))
+                                .font(.caption)
+                                .foregroundColor(Theme.ivoryDim)
+                            Spacer()
+                            Button {
+                                voice.togglePeerMute(id)
+                            } label: {
+                                Image(systemName: voice.mutedPeerIds.contains(id) ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(voice.mutedPeerIds.contains(id) ? Theme.error : Theme.ivoryDim.opacity(0.5))
+                            }
+                        }
+                    }
+                }
+            }
+            HStack(spacing: 10) {
+                if !voice.enabled {
+                    Button {
+                        Task { await voice.enableVoice() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "mic.fill")
+                            Text(voice.connecting ? "Verbinde…" : "Sprachchat aktivieren")
+                        }
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(Theme.bgDark)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Theme.gold)
+                        .cornerRadius(Theme.Radius.sm)
+                    }
+                    .disabled(voice.connecting)
+                } else {
+                    Button {
+                        voice.toggleMute()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: voice.muted ? "mic.slash.fill" : "mic.fill")
+                            Text(voice.muted ? "Stumm" : "Live")
+                        }
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(voice.muted ? Theme.ivoryDim : Theme.bgDark)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(voice.muted ? Theme.bgPanel : Theme.gold)
+                        .cornerRadius(Theme.Radius.sm)
+                    }
+                    Button {
+                        Task { await voice.disableVoice() }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption)
+                            .foregroundColor(Theme.ivoryDim)
+                            .padding(10)
+                            .background(Theme.bgPanel)
+                            .cornerRadius(Theme.Radius.sm)
+                    }
+                }
+            }
+            if let errorMessage = voice.errorMessage {
+                Text(errorMessage)
+                    .font(.caption2)
+                    .foregroundColor(Theme.error)
+            }
+        }
+        .padding(.top, 18)
+    }
+
+    private func nameFor(userId: UUID) -> String {
+        viewModel.players.first { $0.userId == userId }?.aiName ?? "?"
     }
 
     private func playerRow(_ player: RoomPlayer) -> some View {

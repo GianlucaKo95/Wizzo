@@ -6,11 +6,17 @@ import SwiftUI
 /// reuse GameRoom for SpectatorRoom (see docs/ARCHITECTURE.md).
 struct SpectatorView: View {
     @StateObject private var viewModel: SpectatorViewModel
+    // Owned here, not shared with anything else - a spectator visit never
+    // goes through LobbyView, so there's no parent to own this instead
+    // (unlike GameView, which gets one passed down - see VoiceChatManager's
+    // doc comment).
+    @StateObject private var voice: VoiceChatManager
     let onLeave: () -> Void
     @State private var showLog = false
 
     init(roomId: UUID, onLeave: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: SpectatorViewModel(roomId: roomId))
+        _voice = StateObject(wrappedValue: VoiceChatManager(roomId: roomId))
         self.onLeave = onLeave
     }
 
@@ -27,7 +33,10 @@ struct SpectatorView: View {
             }
         }
         .task { await viewModel.start() }
-        .onDisappear { viewModel.stop() }
+        .onDisappear {
+            viewModel.stop()
+            Task { await voice.disableVoice() }
+        }
     }
 
     private func leave() {
@@ -70,6 +79,7 @@ struct SpectatorView: View {
                 .font(.caption.weight(.bold))
                 .foregroundColor(Theme.gold)
             Spacer()
+            voiceControls
             Button {
                 showLog = true
             } label: {
@@ -81,6 +91,31 @@ struct SpectatorView: View {
         .padding(.horizontal, 16)
         .padding(.top, 54)
         .padding(.bottom, 10)
+    }
+
+    /// Mirrors the mic/leave icon pair App.tsx shows in SpectatorRoom's own
+    /// header (same "Sprachchat beitreten" wording difference from
+    /// GameRoom's "aktivieren", everything else identical - see
+    /// VoiceChatManager).
+    @ViewBuilder
+    private var voiceControls: some View {
+        Button {
+            if voice.enabled { voice.toggleMute() } else { Task { await voice.enableVoice() } }
+        } label: {
+            Image(systemName: voice.enabled && !voice.muted ? "mic.fill" : "mic.slash.fill")
+                .font(.system(size: 13))
+                .foregroundColor(voice.enabled && !voice.muted ? Theme.success : Theme.ivoryDim)
+        }
+        .disabled(voice.connecting)
+        if voice.enabled {
+            Button {
+                Task { await voice.disableVoice() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.ivoryDim)
+            }
+        }
     }
 
     private var lobbyContent: some View {
@@ -133,6 +168,11 @@ struct SpectatorView: View {
                         Text("\(player.score ?? 0)")
                             .font(.caption.weight(.bold))
                             .foregroundColor(Theme.ivory)
+                        if let userId = player.userId, voice.participantIds.contains(userId) {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(Theme.ivoryDim)
+                        }
                         Text("🂠\(player.handCount ?? 0)")
                             .font(.caption2)
                             .foregroundColor(Theme.ivoryDim)
