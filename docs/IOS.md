@@ -6,7 +6,7 @@ Wizzo wird komplett nativ als SwiftUI-App neu gebaut (nicht als Web-Wrapper) –
 
 Kurz zusammengefasst aus der Diskussion, die zu dieser Entscheidung geführt hat: ein reiner Wrapper (z. B. Capacitor) hätte den bestehenden Web-Code 1:1 übernommen, aber eben auch dessen Grenzen – kein wirklich natives Gefühl (Scrollen/Übergänge/Gesten bleiben Web), Sprachchat bricht im Hintergrund ab, Web-Push ist auf iOS unzuverlässig. Da ein echtes natives Gefühl gewünscht war und die PWA ohnehin nicht weiterbetrieben werden soll, baut die App stattdessen die komplette UI in SwiftUI neu, gegen **dasselbe, unveränderte Supabase-Backend** (Postgres/RLS/Realtime/Edge-Function) wie die Web-App – siehe [`ARCHITECTURE.md`](ARCHITECTURE.md) und [`DATABASE.md`](DATABASE.md) für das Backend, das hier 1:1 weiterverwendet wird.
 
-## Stand: Phase 1-4 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. 6 von 9 Sonderkarten)
+## Stand: Phase 1-5 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten)
 
 Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 
@@ -14,21 +14,20 @@ Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 - Supabase-Anbindung über das offizielle [`supabase-swift`](https://github.com/supabase/supabase-swift)-SDK (Auth, Postgrest, Realtime)
 - **Anmelden/Registrieren**: repliziert exakt die Logik aus `AuthScreen` in `wizard/frontend/src/App.tsx` – es gibt keine echte E-Mail, nur einen Namen; dahinter steht eine synthetische `<slug>@wizard.local`-Adresse mit einem abgeleiteten Standardpasswort, wenn keins gesetzt wird. **Das muss exakt übereinstimmen**, sonst können sich Web- und App-Nutzer nicht gegenseitig mit denselben Konten anmelden.
 - **Profil-Tab**: lädt die eigene `profiles`-Zeile, zeigt Name + Mitglied-seit, funktionierendes Abmelden.
-- **Home-Tab**: Raum erstellen oder per Code beitreten – ruft dieselben `createRoom`/`joinRoom`-Edge-Function-Aktionen auf wie die Web-App. Die Edition-Wahl beim Erstellen ist aktuell auf Classic fest verdrahtet (siehe Begründung unten).
+- **Home-Tab**: Raum erstellen (Edition wählbar – Classic oder "30 Jahre") oder per Code beitreten – ruft dieselben `createRoom`/`joinRoom`-Edge-Function-Aktionen auf wie die Web-App.
 - **Lobby**: Live-Spielerliste (Supabase-Realtime-Channel auf `rooms`/`room_players`, plus 5s-Poll-Fallback wie im Web-Pendant), Host-Kennzeichnung, "Spiel starten" (ruft `startGame` auf, inkl. derselben KI-Auffüll-Logik bis 3 Sitzplätze), Verlassen.
 - **Spieltisch**: Trumpf wählen (wenn der Dealer einen Zauberer aufdeckt), bieten, Karten ausspielen, Stichanzeige, Rundenende mit Punktestand, "Nächste Runde"/"Nochmal spielen" (Host), KI-Züge (client-getriebenes `triggerAI` nach 2s Verzögerung, genau wie im Web-Pendant) und automatisches `clearTrick` nach 5s. Kartenanzeige ist bewusst nur textbasiert (Wert/Farbsymbol, kein Karten-Artwork) – eine eigene Asset-Pipeline ist nicht Teil dieser Phase.
-- **6 der 9 "30 Jahre"-Sonderkarten** (Phase 4): Drache/Seidenschnabel, Fee, Bombe/Elderstab, Vampir/Quirrell, Werwolf/Lupin, Zauberer-oder-Narr/Ron Weasley. Drache/Fee/Bombe/Vampir brauchen client-seitig keine eigene Interaktion – sie laufen über das normale `playCard`, der Server behandelt ihre Sonderregeln (Schlagen/Verlieren/Stich-Annullierung/Trumpf-Kopie) selbst; die App zeigt sie nur korrekt an (Kurzlabel + Farbe, mirror von `specialConfigs` in `CardView.tsx`). Werwolf löst eine eigene Phase `choosingWerewolf` aus (wer die Karte zieht, bestimmt die Stichfarbe für die ganze Runde – eigener Picker, analog zum Trumpf-Picker). Ron Weasley/Zauberer-oder-Narr zeigt beim Antippen einen Zauberer/Narr-Dialog und spielt die Karte über `playSpecial` statt `playCard`.
+- **Alle 9 "30 Jahre"-Sonderkarten**:
+  - Drache/Seidenschnabel, Fee, Bombe/Elderstab, Vampir/Quirrell (Phase 4) brauchen client-seitig keine eigene Interaktion – sie laufen über das normale `playCard`, der Server behandelt ihre Sonderregeln (Schlagen/Verlieren/Stich-Annullierung/Trumpf-Kopie) selbst; die App zeigt sie nur korrekt an (Kurzlabel + Farbe, mirror von `specialConfigs` in `CardView.tsx`).
+  - Werwolf/Lupin (Phase 4) löst eine eigene Phase `choosingWerewolf` aus (wer die Karte zieht, bestimmt die Stichfarbe für die ganze Runde – eigener Picker, analog zum Trumpf-Picker).
+  - Zauberer-oder-Narr/Ron Weasley (Phase 4) zeigt beim Antippen einen Zauberer/Narr-Dialog und spielt die Karte über `playSpecial` statt `playCard`.
+  - Jongleur/George Weasley (`rainbow7`) und Gleis 9¾ (`rainbow9`) (Phase 5) zeigen beim Antippen einen Farb-Dialog (die Farbe, mit der die Karte "kämpft") und spielen dann über `playCard` mit `suit`. Danach läuft serverseitig ein Nachlauf während `phase === "trickEnd"`: Jongleur verlangt von JEDEM Spieler eine Karte zum Weitergeben an den linken Nachbarn (`passCard`, eigener Picker über die ganze Hand); Gleis 9¾ verlangt vom Stichgewinner eine Anpassung seiner Vorhersage um ±1 (`rainbow9Adjust`, mit derselben "−1 nur wenn noch nicht im Ziel"-Einschränkung wie die Web-App). Sind beide im selben Stich, löst der Server Jongleur zuerst auf und Gleis 9¾ erst danach (`pending_rainbow9_deferred`) – rein serverseitig, die App muss das nicht selbst nachbilden.
+  - Hexe/Bellatrix (`witch`) (Phase 5) läuft normal über `playCard`; nach Stichgewinn zeigt die App einen zweistufigen Dialog (erst eine Karte aus dem Stich nehmen, dann eine eigene Handkarte dafür abgeben, über `playSpecial`), gefolgt von einer kurzen `witchReveal`-Phase, die das Tausch-Ergebnis anzeigt (client-getriebenes `witchRevealDone` nach 4s, wie im Web-Pendant).
+  - Alle drei pending-Zustände (Jongleur/Hexe/Gleis 9¾) existieren serverseitig ausschließlich während `phase === "trickEnd"` – die App zeigt während dieser Zeit statt des normalen "Stich gewinnt …"-Banners den jeweils zuständigen Dialog für die betroffene Person bzw. einen kurzen Warte-Hinweis für alle anderen.
 - Tab-Leiste (Home/Freunde/Statistik/Profil, siehe `TabKey` in `App.tsx`) – Freunde/Statistik sind weiterhin ehrliche "Kommt noch"-Platzhalter, keine Fake-Daten.
-
-### Warum die "30 Jahre"-Edition beim Raum-Erstellen vorerst ausgeblendet ist
-
-Die restlichen 3 Sonderkarten – Jongleur/George Weasley (`rainbow7`), Gleis 9¾ (`rainbow9`), Hexe/Bellatrix (`witch`) – brauchen jeweils einen mehrstufigen, zustandsbehafteten Dialog (Farbwahl + Karte weiterreichen bei den beiden Jongleur-Karten, Karten-Tausch nach Stichgewinn bei der Hexe via `pending_witch`/`witchReveal`), den die App noch nicht hat. Da in der Jubiläumsedition alle neun Sonderkarten immer gemeinsam im Deck sind, würde ein Spiel garantiert stecken bleiben, sobald eine der drei fehlenden Karten gezogen und gespielt wird – die App hätte keine UI, um den dadurch entstehenden Server-Zustand aufzulösen. Deshalb ist die Edition-Wahl beim Raum-Erstellen in `HomeView` vorerst auf Classic fest verdrahtet, bis diese drei Karten in einer eigenen Phase nachgezogen sind.
-
-**Bekannte Restlücke**: Das Erstellen eines neuen "30 Jahre"-Raums ist dadurch blockiert, das *Beitreten* per Code zu einem bereits existierenden Jubiläums-Raum (z. B. von der Web-App erstellt) aber nicht – `joinRoom` prüft die Edition nicht. Ein App-Nutzer, der einem solchen Raum beitritt, kann also trotzdem auf eine der drei fehlenden Karten treffen. Das ist eine bewusst in Kauf genommene, dokumentierte Lücke, kein Bug.
 
 Was **noch nicht** existiert (jeweils eigene, größere Phasen oder gezielte Nacharbeiten):
 
-- Die restlichen drei Sonderkarten der "30 Jahre"-Jubiläumsedition (Jongleur/`rainbow7`, Gleis 9¾/`rainbow9`, Hexe/`witch`) – siehe Begründung oben
 - Rundenhistorie-Ansicht, Spiel-Log
 - Runde-1-Sonderregel "Indianer Poker" wird serverseitig korrekt erzwungen, aber die App zeigt die dabei eigentlich sichtbaren fremden Handkarten (`visible_hand` in `room_players_view`) noch nicht an – rein visuelle Lücke, keine Regelverletzung
 - Kein client-seitiges Hervorheben spielbarer/unspielbarer Karten (der Server validiert ohnehin jeden Zug serverseitig und lehnt ungültige mit einer Fehlermeldung ab – das ist bewusst die einzige Fehlerquelle für Phase 3, um die KI-/Sonderkarten-Regellogik nicht ein zweites Mal im Client nachbauen zu müssen)
@@ -96,7 +95,7 @@ ios/
     Features/
       Auth/                      # Anmelden/Registrieren
       Home/                      # Tab-Leiste, Raum erstellen/beitreten, Lobby
-      Game/                       # Spieltisch (Classic-Edition): GameView/GameViewModel, CardChipView
+      Game/                       # Spieltisch (Classic + "30 Jahre"): GameView/GameViewModel, CardChipView
       Profile/                   # Profil-Tab (echte Daten)
     Resources/
       Assets.xcassets/          # App-Icon + Accent-Farbe, aus dem bestehenden Branding generiert
@@ -106,4 +105,9 @@ Jede weitere Phase bekommt ihren eigenen Ordner unter `Features/` (z. B. `Featur
 
 ## Nächste sinnvolle Phase
 
-Vorschlag ("Phase 5"): die restlichen drei Sonderkarten der "30 Jahre"-Edition nachrüsten – Jongleur/George Weasley (`rainbow7`: Farbe frei wählen + Karte an einen Mitspieler weitergeben via `passCard`), Gleis 9¾ (`rainbow9`: Farbe frei wählen + Gewinner passt sein Gebot per `rainbow9Adjust` an, inkl. der Sonderfälle wenn Jongleur und Gleis 9¾ im selben Stich liegen), Hexe/Bellatrix (`witch`: normal ausspielen, nach Stichgewinn Karten-Tausch via `playSpecial`/`pending_witch`, dann `phase: "witchReveal"` mit client-getriebenem `witchRevealDone`-Timer analog zum bestehenden `clearTrick`-Muster). Jede braucht ihre eigene mehrstufige UI (Auswahl-Dialoge, siehe `index.ts`). Sobald alle drei stehen, kann die Edition-Sperre in `HomeView` (siehe oben) wieder aufgehoben werden.
+Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar – der Spieltisch selbst hat damit funktional Web-Parität erreicht (mit Ausnahme der rein kosmetischen Lücken unten). Sinnvolle nächste Schritte, grob nach Aufwand sortiert:
+
+- **Rundenhistorie-Ansicht, Spiel-Log** – beides existiert serverseitig bereits (`round_history`-Tabelle, `rooms.log`), fehlt der App aber komplett als UI.
+- **Runde-1 "Indianer Poker"** – die fremden Handkarten (`visible_hand` in `room_players_view`) anzeigen; rein kosmetisch, der Server erzwingt die Regel bereits korrekt ohne Client-Mithilfe.
+- **Automatisches Reconnect** in ein bereits laufendes Spiel beim App-Start (`checkReconnect`-Äquivalent).
+- Danach die größeren, eigenständigen Features: Zuschauer-Modus, Freunde, Statistik, digitaler Rechenblock, Sprachchat (WebRTC), echte Push-Benachrichtigungen (APNs), Avatar-Upload.

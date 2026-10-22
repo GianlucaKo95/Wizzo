@@ -26,6 +26,16 @@ struct Room: Codable, Identifiable {
     var currentTrick: [TrickEntry]?
     var lastTrickWinner: Int?
     var lastTrickCards: [TrickEntry]?
+    /// 30-Jahre-Sonderkarten-Nachwirkungen (Phase 5) - alle drei existieren
+    /// nur während `phase == "trickEnd"` (siehe handleClearTrick in
+    /// index.ts, das genau deshalb blockiert, solange einer davon gesetzt
+    /// ist). pendingRainbow7 listet ALLE Spieler, die noch eine Karte
+    /// weitergeben müssen (Jongleur); pendingWitch/pendingRainbow9 je einen
+    /// einzelnen Spielerindex (Hexe-Tausch bzw. Wolke-Vorhersage).
+    var pendingRainbow7: [Int]?
+    var pendingRainbow9: Int?
+    var pendingWitch: Int?
+    var witchSwap: WitchSwap?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -41,5 +51,9 @@ struct Room: Codable, Identifiable {
         case currentTrick = "current_trick"
         case lastTrickWinner = "last_trick_winner"
         case lastTrickCards = "last_trick_cards"
+        case pendingRainbow7 = "pending_rainbow7"
+        case pendingRainbow9 = "pending_rainbow9"
+        case pendingWitch = "pending_witch"
+        case witchSwap = "witch_swap"
     }
 }

@@ -4,6 +4,9 @@ struct GameView: View {
     @StateObject private var viewModel: GameViewModel
     let onLeave: () -> Void
     @State private var wizardfoolCardId: String?
+    @State private var rainbowSuitCardId: String?
+    @State private var rainbow7CardId: String?
+    @State private var witchTakeCardId: String?
 
     init(roomId: UUID, onLeave: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: GameViewModel(roomId: roomId))
@@ -36,12 +39,54 @@ struct GameView: View {
             Button("Narr") { resolveWizardfool(choice: "fool") }
             Button("Abbrechen", role: .cancel) { wizardfoolCardId = nil }
         }
+        .overlay {
+            if let cardId = rainbowSuitCardId {
+                suitChoiceOverlay(cardId: cardId)
+            }
+        }
     }
 
     private func resolveWizardfool(choice: String) {
         guard let cardId = wizardfoolCardId else { return }
         wizardfoolCardId = nil
         Task { await viewModel.playWizardfool(cardId: cardId, choice: choice) }
+    }
+
+    /// Jongleur/George Weasley (rainbow7) and Gleis 9¾ (rainbow9) both need a
+    /// suit choice at the moment they're played (index.ts's playCard,
+    /// `isRainbowChoice`) - a dedicated colored-suit overlay rather than
+    /// confirmationDialog's plain text buttons, to stay visually consistent
+    /// with trumpPicker/werewolfPicker. Tapping the dimmed background cancels
+    /// without playing the card (the server itself never requires a choice -
+    /// this mirrors the web app always asking before playing either card).
+    private func suitChoiceOverlay(cardId: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.6).ignoresSafeArea()
+                .onTapGesture { rainbowSuitCardId = nil }
+            VStack(spacing: 14) {
+                Text("Welche Farbe?")
+                    .font(.headline)
+                    .foregroundColor(Theme.gold)
+                HStack(spacing: 10) {
+                    ForEach(["red", "blue", "green", "yellow"], id: \.self) { suit in
+                        Button {
+                            rainbowSuitCardId = nil
+                            Task { await viewModel.playCard(cardId, suit: suit) }
+                        } label: {
+                            Text(Theme.suitSymbol(suit))
+                                .font(.headline)
+                                .frame(width: 44, height: 44)
+                                .foregroundColor(Theme.bgDark)
+                                .background(Theme.suitColor(suit))
+                                .clipShape(Circle())
+                        }
+                    }
+                }
+            }
+            .padding(24)
+            .background(Theme.bgPanel)
+            .cornerRadius(Theme.Radius.lg)
+        }
     }
 
     private func content(room: Room) -> some View {
@@ -60,7 +105,23 @@ struct GameView: View {
             case "bidding":
                 biddingArea(room: room)
             case "trickEnd":
-                trickEndBanner(room: room)
+                // Jongleur/Hexe/Wolke (Phase 5) all run their follow-up
+                // during this same phase (see handleClearTrick in index.ts,
+                // which refuses to leave trickEnd while one of these is
+                // still pending) - whichever applies to ME takes over the
+                // normal trick-end banner until I've resolved it.
+                if let myIndex = viewModel.myIndex, room.pendingRainbow7?.contains(myIndex) == true {
+                    rainbow7PassPicker(room: room)
+                } else if let myIndex = viewModel.myIndex, room.pendingWitch == myIndex {
+                    witchSwapPicker(room: room)
+                } else if let myIndex = viewModel.myIndex, room.pendingRainbow9 == myIndex,
+                          let me = viewModel.players.first(where: { $0.playerIndex == myIndex }) {
+                    rainbow9AdjustPicker(player: me)
+                } else {
+                    trickEndBanner(room: room)
+                }
+            case "witchReveal":
+                witchRevealBanner(room: room)
             case "roundEnd":
                 roundEndSummary
             case "gameEnd":
@@ -69,7 +130,11 @@ struct GameView: View {
                 EmptyView()
             }
 
-            if room.phase == "bidding" || room.phase == "playing" || room.phase == "trickEnd" {
+            let myIndexForHand = viewModel.myIndex
+            let handConsumedByPendingAction =
+                (myIndexForHand != nil && room.pendingRainbow7?.contains(myIndexForHand!) == true) ||
+                (myIndexForHand != nil && room.pendingWitch == myIndexForHand)
+            if (room.phase == "bidding" || room.phase == "playing" || room.phase == "trickEnd") && !handConsumedByPendingAction {
                 handArea
             }
 
@@ -282,11 +347,193 @@ struct GameView: View {
         .padding(.vertical, 10)
     }
 
+    /// Falls back to a one-line status while a pending Jongleur/Hexe/Wolke
+    /// follow-up belongs to someone ELSE (mine take over the whole phase
+    /// switch instead, see content(room:)) - without this, waiting players
+    /// would just see the stale winner banner while nothing visibly happens.
+    @ViewBuilder
     private func trickEndBanner(room: Room) -> some View {
-        Text(room.lastTrickWinner.map { "Stich gewinnt \(nameFor(playerIndex: $0))" } ?? "Stich beendet")
-            .font(.subheadline.weight(.semibold))
-            .foregroundColor(Theme.gold)
-            .padding(.vertical, 10)
+        if let pending = room.pendingRainbow7, !pending.isEmpty {
+            Text("🎁 Wartet auf Kartenweitergabe…")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.ivoryDim)
+                .padding(.vertical, 10)
+        } else if room.pendingWitch != nil {
+            Text("🧹 Wartet auf Kartentausch…")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.ivoryDim)
+                .padding(.vertical, 10)
+        } else if room.pendingRainbow9 != nil {
+            Text("🚂 Wartet auf Vorhersage-Anpassung…")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.ivoryDim)
+                .padding(.vertical, 10)
+        } else {
+            Text(room.lastTrickWinner.map { "Stich gewinnt \(nameFor(playerIndex: $0))" } ?? "Stich beendet")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.gold)
+                .padding(.vertical, 10)
+        }
+    }
+
+    /// George Weasley/Jongleur (rainbow7): everyone still in
+    /// `room.pendingRainbow7` picks one hand card to pass to their left
+    /// neighbor (see passCard in GameViewModel). A dedicated picker, not
+    /// handArea's tap-to-play - the hand is being used for a different
+    /// purpose here, so handArea is hidden while this is showing (see
+    /// content(room:)'s handConsumedByPendingAction).
+    private func rainbow7PassPicker(room: Room) -> some View {
+        VStack(spacing: 10) {
+            Text("🎁 George Weasley – Karte weitergeben")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.gold)
+            Text("Wähle eine Karte für deinen linken Nachbarn" + (room.pendingRainbow7.map { " · noch \($0.count) ausstehend" } ?? ""))
+                .font(.caption)
+                .foregroundColor(Theme.ivoryDim)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.myHand) { card in
+                        CardChipView(card: card, isSelected: rainbow7CardId == card.id)
+                            .onTapGesture { rainbow7CardId = card.id }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            Button {
+                guard let cardId = rainbow7CardId else { return }
+                rainbow7CardId = nil
+                Task { await viewModel.passCard(cardId) }
+            } label: {
+                primaryLabel(viewModel.isSubmitting ? "…" : "KARTE WEITERGEBEN")
+            }
+            .disabled(rainbow7CardId == nil || viewModel.isSubmitting)
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 10)
+    }
+
+    /// Bellatrix/Hexe: two steps - pick a card from the just-completed trick
+    /// to take (step 1, witchTakeCardId == nil), then pick a hand card to
+    /// give away in exchange (step 2). Mirrors App.tsx's specialAction
+    /// "witchGive" two-step flow exactly.
+    private func witchSwapPicker(room: Room) -> some View {
+        VStack(spacing: 10) {
+            Text("🧹 Bellatrix – Karte tauschen")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.specialColor("witch"))
+            if let takeCardId = witchTakeCardId {
+                Text("Welche Karte gibst du dafür ab?")
+                    .font(.caption)
+                    .foregroundColor(Theme.ivoryDim)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(viewModel.myHand) { card in
+                            CardChipView(card: card)
+                                .onTapGesture {
+                                    guard !viewModel.isSubmitting else { return }
+                                    witchTakeCardId = nil
+                                    Task { await viewModel.playWitchSwap(takeCardId: takeCardId, giveCardId: card.id) }
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            } else {
+                Text("Wähle eine Karte aus dem Stich, die du nimmst")
+                    .font(.caption)
+                    .foregroundColor(Theme.ivoryDim)
+                let trickCards = (room.lastTrickCards ?? []).filter { $0.card.specialType != "witch" && $0.card.id != "witch" }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(trickCards) { entry in
+                            VStack(spacing: 4) {
+                                CardChipView(card: entry.card)
+                                Text(nameFor(playerIndex: entry.playerIndex))
+                                    .font(.caption2)
+                                    .foregroundColor(Theme.ivoryDim)
+                                    .lineLimit(1)
+                            }
+                            .onTapGesture { witchTakeCardId = entry.card.id }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    /// Gleis 9¾/Wolke: the trick winner must adjust their own bid by ±1.
+    /// Decreasing is blocked if they already have exactly as many tricks as
+    /// their current bid (mirrors `canDecrease` in App.tsx) - going below
+    /// that would contradict tricks already won this round.
+    private func rainbow9AdjustPicker(player: RoomPlayer) -> some View {
+        let currentBid = player.bid ?? 0
+        let tricksWon = player.tricksWon ?? 0
+        let canDecrease = currentBid > 0 && tricksWon != currentBid
+        return VStack(spacing: 10) {
+            Text("🚂 Gleis 9¾ – Vorhersage anpassen")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Theme.specialColor("rainbow9"))
+            Text("Aktuell: \(currentBid)" + (tricksWon == currentBid ? " · du bist im Ziel, nur +1 möglich" : ""))
+                .font(.caption)
+                .foregroundColor(Theme.ivoryDim)
+            HStack(spacing: 10) {
+                if canDecrease {
+                    Button {
+                        Task { await viewModel.rainbow9Adjust(-1) }
+                    } label: {
+                        Text("−1 → \(currentBid - 1)")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .foregroundColor(Theme.bgDark)
+                            .padding(.vertical, 10)
+                            .background(Theme.gold)
+                            .cornerRadius(Theme.Radius.sm)
+                    }
+                    .disabled(viewModel.isSubmitting)
+                }
+                Button {
+                    Task { await viewModel.rainbow9Adjust(1) }
+                } label: {
+                    Text("+1 → \(currentBid + 1)")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .foregroundColor(Theme.bgDark)
+                        .padding(.vertical, 10)
+                        .background(Theme.gold)
+                        .cornerRadius(Theme.Radius.sm)
+                }
+                .disabled(viewModel.isSubmitting)
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 10)
+    }
+
+    /// `phase == "witchReveal"`: the ~4s window after a Hexe swap where the
+    /// swap result is shown before the room moves on (see
+    /// maybeScheduleWitchRevealDone in GameViewModel).
+    private func witchRevealBanner(room: Room) -> some View {
+        VStack(spacing: 8) {
+            if let swap = room.witchSwap {
+                Text("🧹 \(swap.playerName) hat getauscht")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(Theme.specialColor("witch"))
+                HStack(spacing: 16) {
+                    VStack(spacing: 4) {
+                        Text("ABGEGEBEN").font(.caption2).foregroundColor(Theme.ivoryDim)
+                        CardChipView(card: swap.gave)
+                    }
+                    Text("⇄").foregroundColor(Theme.gold)
+                    VStack(spacing: 4) {
+                        Text("GENOMMEN").font(.caption2).foregroundColor(Theme.ivoryDim)
+                        CardChipView(card: swap.took)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 10)
     }
 
     private var roundEndSummary: some View {
@@ -371,6 +618,8 @@ struct GameView: View {
                             // card, special or not, just plays directly.
                             if card.specialType == "wizardfool" {
                                 wizardfoolCardId = card.id
+                            } else if card.specialType == "rainbow7" || card.specialType == "rainbow9" {
+                                rainbowSuitCardId = card.id
                             } else {
                                 Task { await viewModel.playCard(card.id) }
                             }

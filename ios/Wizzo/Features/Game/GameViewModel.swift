@@ -18,8 +18,9 @@ final class GameViewModel: ObservableObject {
     private var aiTriggerPending = false
     private var aiTriggerLastKey: String?
     private var clearTrickPending = false
+    private var witchRevealPending = false
 
-    private static let roomColumns = "id, code, phase, edition, round, max_rounds, dealer, current_player, trump_card, trump_suit, current_trick, last_trick_winner, last_trick_cards"
+    private static let roomColumns = "id, code, phase, edition, round, max_rounds, dealer, current_player, trump_card, trump_suit, current_trick, last_trick_winner, last_trick_cards, pending_rainbow7, pending_rainbow9, pending_witch, witch_swap"
     private static let playerColumns = "id, room_id, user_id, player_index, is_ai, ai_name, connected, bid, tricks_won, score, hand_count, visible_hand"
 
     var myIndex: Int? {
@@ -85,6 +86,7 @@ final class GameViewModel: ObservableObject {
             self.myHand = ownHandRows.first?.hand ?? []
             maybeScheduleAITurn()
             maybeScheduleClearTrick()
+            maybeScheduleWitchRevealDone()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -94,8 +96,35 @@ final class GameViewModel: ObservableObject {
         await submit("bid", extra: ["bid": value])
     }
 
-    func playCard(_ cardId: String) async {
-        await submit("playCard", extra: ["cardId": cardId])
+    /// `suit` is only sent for Jongleur/George Weasley (rainbow7) and Gleis
+    /// 9¾ (rainbow9) - the only two cards where playing them means choosing
+    /// a suit to fight with (index.ts's playCard: `isRainbowChoice`). Every
+    /// other card ignores it server-side, so passing nil for them is safe.
+    func playCard(_ cardId: String, suit: String? = nil) async {
+        var extra: [String: Any] = ["cardId": cardId]
+        if let suit { extra["suit"] = suit }
+        await submit("playCard", extra: extra)
+    }
+
+    /// Jongleur/George Weasley (rainbow7): once it's played, every player
+    /// still in `room.pendingRainbow7` must pick a card from their own hand
+    /// to pass to their left neighbor (see passCard in index.ts).
+    func passCard(_ cardId: String) async {
+        await submit("passCard", extra: ["cardId": cardId])
+    }
+
+    /// Gleis 9¾ (rainbow9): the trick winner must adjust their own bid by
+    /// exactly ±1 (clamped to >= 0 server-side).
+    func rainbow9Adjust(_ adjust: Int) async {
+        await submit("rainbow9Adjust", extra: ["adjust": adjust])
+    }
+
+    /// Hexe/Bellatrix: the player who played it (room.pendingWitch) takes
+    /// one card from the just-completed trick and gives one of their own
+    /// hand cards back in exchange - a dedicated playSpecial action, not
+    /// playCard, same shape as playWizardfool below.
+    func playWitchSwap(takeCardId: String, giveCardId: String) async {
+        await submit("playSpecial", extra: ["specialAction": "witch", "takeCardId": takeCardId, "giveCardId": giveCardId])
     }
 
     /// Ron Weasley/Zauberer-oder-Narr: the only special card played through
@@ -171,6 +200,20 @@ final class GameViewModel: ObservableObject {
             try? await Task.sleep(for: .seconds(5))
             clearTrickPending = false
             _ = await GameActionClient.call(roomId: roomId.uuidString, action: "clearTrick")
+        }
+    }
+
+    /// Hexe/Bellatrix: same client-driven-delay pattern as clearTrick above
+    /// (App.tsx uses the same 4s), so the swap result is actually visible
+    /// before the room moves on - the server has its own 6s fallback
+    /// (scheduleWitchRevealDone in index.ts) in case no client is open.
+    private func maybeScheduleWitchRevealDone() {
+        guard room?.phase == "witchReveal", !witchRevealPending else { return }
+        witchRevealPending = true
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            witchRevealPending = false
+            _ = await GameActionClient.call(roomId: roomId.uuidString, action: "witchRevealDone")
         }
     }
 
