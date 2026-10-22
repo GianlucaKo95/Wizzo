@@ -6,7 +6,7 @@ Wizzo wird komplett nativ als SwiftUI-App neu gebaut (nicht als Web-Wrapper) –
 
 Kurz zusammengefasst aus der Diskussion, die zu dieser Entscheidung geführt hat: ein reiner Wrapper (z. B. Capacitor) hätte den bestehenden Web-Code 1:1 übernommen, aber eben auch dessen Grenzen – kein wirklich natives Gefühl (Scrollen/Übergänge/Gesten bleiben Web), Sprachchat bricht im Hintergrund ab, Web-Push ist auf iOS unzuverlässig. Da ein echtes natives Gefühl gewünscht war und die PWA ohnehin nicht weiterbetrieben werden soll, baut die App stattdessen die komplette UI in SwiftUI neu, gegen **dasselbe, unveränderte Supabase-Backend** (Postgres/RLS/Realtime/Edge-Function) wie die Web-App – siehe [`ARCHITECTURE.md`](ARCHITECTURE.md) und [`DATABASE.md`](DATABASE.md) für das Backend, das hier 1:1 weiterverwendet wird.
 
-## Stand: Phase 1-9 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten, Spielblatt & Log, Indianer Poker, Reconnect, Freunde-Grundgerüst)
+## Stand: Phase 1-10 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten, Spielblatt & Log, Indianer Poker, Reconnect, Freunde-Grundgerüst, Zuschauer-Modus)
 
 Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 
@@ -26,7 +26,8 @@ Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
   - Alle drei pending-Zustände (Jongleur/Hexe/Gleis 9¾) existieren serverseitig ausschließlich während `phase === "trickEnd"` – die App zeigt während dieser Zeit statt des normalen "Stich gewinnt …"-Banners den jeweils zuständigen Dialog für die betroffene Person bzw. einen kurzen Warte-Hinweis für alle anderen.
 - **Spielblatt & Spiel-Log** (Phase 6): zwei Sheets, über zwei Icon-Buttons im Spieltisch-Header erreichbar. Das Spielblatt zeigt die `round_history`-Tabelle rundenweise (laufende Summe + Ansage pro Spieler, berechnet wie `computeRunningTotals` in `App.tsx`) plus eine Live-Zeile für die aktuell laufende Runde; wird on-demand beim Öffnen geladen, nicht fortlaufend gepollt (die Tabelle wächst nur einmal pro Runde). Das Log zeigt `rooms.log` (dieselben Einträge wie im Web-Pendant) als einfache Liste.
 - **Runde-1-Sonderregel "Indianer Poker"** (Phase 7): im Scoreboard zeigt jeder Mitspieler-Eintrag jetzt einen Hand-Indikator – in Runde 1 die echte(n) Karte(n) (über `visible_hand`, das `room_players_view` nur in Runde 1 für fremde Zeilen befüllt, siehe `000_full_reset.sql`), sonst nur eine verdeckte Zählung ("🂠 ×N"). Die eigene Hand wird in Runde 1 umgekehrt verdeckt angezeigt (`CardChipView(faceDown:)`, mirrors `faceDown={room.round === 1}` in `App.tsx`) – Tippen/Ausspielen funktioniert unverändert positionsbasiert, nur die Kartenseite ist anders.
-- **Freunde-Tab** (Phase 9, Grundgerüst): per Username suchen und eine Anfrage senden (`sendFriendRequest`-Edge-Action, dieselbe Anti-Enumeration wie bei der Web-App – jede Antwort sieht gleich aus, egal ob der Name existiert, schon befreundet ist oder man sich selbst sucht), offene eingehende Anfragen annehmen/ablehnen, bestehende Freundschaften entfernen, ausstehende eigene Anfragen zurückziehen. Annehmen/Entfernen/Zurückziehen sind – wie im Web-Pendant – direkte, RLS-geschützte Schreibzugriffe auf `friends` (kein Edge-Function-Aufwand nötig), nicht nur bei `sendFriendRequest`. **Noch nicht** enthalten: Online-Status-Punkt, "Spielt gerade"/ZUSCHAUEN-Button (braucht Presence-Tracking bzw. den noch nicht gebauten Zuschauer-Modus) und Antippen für ein Freundesprofil (braucht die noch nicht gebaute Statistik) – siehe Begründung zur Phasen-Reihenfolge unten.
+- **Freunde-Tab** (Phase 9, Grundgerüst): per Username suchen und eine Anfrage senden (`sendFriendRequest`-Edge-Action, dieselbe Anti-Enumeration wie bei der Web-App – jede Antwort sieht gleich aus, egal ob der Name existiert, schon befreundet ist oder man sich selbst sucht), offene eingehende Anfragen annehmen/ablehnen, bestehende Freundschaften entfernen, ausstehende eigene Anfragen zurückziehen. Annehmen/Entfernen/Zurückziehen sind – wie im Web-Pendant – direkte, RLS-geschützte Schreibzugriffe auf `friends` (kein Edge-Function-Aufwand nötig), nicht nur bei `sendFriendRequest`. **Noch nicht** enthalten: allgemeiner Online-Status-Punkt (braucht Presence-Tracking, unabhängig vom Zuschauer-Modus) und Antippen für ein Freundesprofil (braucht die noch nicht gebaute Statistik).
+- **Zuschauer-Modus** (Phase 10): im Freunde-Tab zeigt jeder Freund, der gerade in einem laufenden Raum sitzt ("Spielt gerade · Runde X", über `friends_active_rooms`, alle 10s neu geladen wie im Web-Pendant), einen ZUSCHAUEN-Button. Der ruft `spectateRoom` auf (serverseitig geprüft: nur mit einem bestätigten Freund im Zielraum erlaubt) und öffnet dann `SpectatorView` – einen bewusst eigenständigen, rein lesenden Spieltisch (kein `GameView` mit einem `isSpectator`-Flag, aus demselben Grund wie beim Web-Pendant `SpectatorRoom`/`GameRoom`, siehe `docs/ARCHITECTURE.md`: zu viele Verzweigungen würden sonst implizit einen echten Sitzplatz voraussetzen). "ZUSCHAUEN BEENDEN" ruft `leaveSpectating` auf. Da Zuschauer keine eigene `room_players`-Zeile haben, gibt es (wie im Web-Pendant) keinen Realtime-Stream auf dieser Tabelle – nur ein `rooms`-UPDATE-Watch plus 5s-Poll-Fallback.
 - Tab-Leiste (Home/Freunde/Statistik/Profil, siehe `TabKey` in `App.tsx`) – Statistik ist weiterhin ein ehrlicher "Kommt noch"-Platzhalter, keine Fake-Daten.
 
 ### Warum Freunde vor Zuschauer-Modus kam
@@ -39,7 +40,7 @@ Der ursprüngliche Vorschlag hatte den Zuschauer-Modus vor Freunde eingeplant. B
 
 Was **noch nicht** existiert (jeweils eigene, größere Phasen oder gezielte Nacharbeiten):
 - Kein client-seitiges Hervorheben spielbarer/unspielbarer Karten (der Server validiert ohnehin jeden Zug serverseitig und lehnt ungültige mit einer Fehlermeldung ab – das ist bewusst die einzige Fehlerquelle für Phase 3, um die KI-/Sonderkarten-Regellogik nicht ein zweites Mal im Client nachbauen zu müssen)
-- Zuschauer-Modus
+- Zuschauer-Modus: Sprachchat für Zuschauer (braucht die noch nicht gebaute Sprachchat-Phase insgesamt) – die eigentliche Zuschauer-Funktion (Entdecken, Beitreten, rein lesender Spieltisch) gibt es seit Phase 10
 - Freunde: Online-Status, Raum-Einladungen aus der Lobby, Freundesprofile mit Statistik (das Grundgerüst – suchen/anfragen/annehmen/entfernen – gibt es seit Phase 9)
 - Statistik ("Letzte Partien", Trefferquote)
 - Digitaler Rechenblock
@@ -103,18 +104,19 @@ ios/
       Auth/                      # Anmelden/Registrieren
       Home/                      # Tab-Leiste, Raum erstellen/beitreten, Lobby
       Game/                       # Spieltisch (Classic + "30 Jahre"): GameView/GameViewModel, CardChipView
+      Friends/                   # Freunde-Tab: suchen/anfragen/annehmen/entfernen, Zuschauer-Entdeckung
+      Spectator/                 # Zuschauer-Modus: rein lesender SpectatorView/SpectatorViewModel
       Profile/                   # Profil-Tab (echte Daten)
     Resources/
       Assets.xcassets/          # App-Icon + Accent-Farbe, aus dem bestehenden Branding generiert
 ```
 
-Jede weitere Phase bekommt ihren eigenen Ordner unter `Features/` (z. B. `Features/Friends/`) nach demselben Schema: eine `*View.swift` (SwiftUI) + ein `*ViewModel.swift` (`ObservableObject`, hält den `async`-Zugriff auf `SupabaseService.client`).
+Jede weitere Phase bekommt ihren eigenen Ordner unter `Features/` nach demselben Schema: eine `*View.swift` (SwiftUI) + ein `*ViewModel.swift` (`ObservableObject`, hält den `async`-Zugriff auf `SupabaseService.client`).
 
 ## Nächste sinnvolle Phase
 
-Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar; Phase 6 hat Spielblatt und Log nachgerüstet, Phase 7 die Indianer-Poker-Anzeige, Phase 8 das Reconnect, Phase 9 das Freunde-Grundgerüst. Der Spieltisch samt Lobby/Reconnect hat damit funktional Web-Parität erreicht. Was jetzt noch fehlt, sind die großen, eigenständigen Feature-Blöcke – jeder vermutlich mindestens eine eigene Phase, grob nach Aufwand sortiert:
+Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar; Phase 6 hat Spielblatt und Log nachgerüstet, Phase 7 die Indianer-Poker-Anzeige, Phase 8 das Reconnect, Phase 9 das Freunde-Grundgerüst, Phase 10 den Zuschauer-Modus. Der Spieltisch samt Lobby/Reconnect/Zuschauen hat damit funktional Web-Parität erreicht (abgesehen vom noch fehlenden Sprachchat für Zuschauer, der ohnehin erst mit der Sprachchat-Phase insgesamt Sinn ergibt). Was jetzt noch fehlt, sind die großen, eigenständigen Feature-Blöcke – jeder vermutlich mindestens eine eigene Phase, grob nach Aufwand sortiert:
 
-- **Zuschauer-Modus** – jetzt sinnvoll umsetzbar, da Phase 9 die dafür nötige Freundesliste liefert (`spectateRoom` setzt eine bestehende Freundschaft mit jemandem im Zielraum voraus, siehe oben); braucht zusätzlich die `friends_active_rooms`-Entdeckung ("wer von meinen Freunden spielt gerade wo") und eine rein lesende `SpectatorRoom`-Variante des Spieltischs.
 - **Freunde, Rest**: Online-Status (Presence-Tracking), Raum-Einladungen aus der Lobby, Freundesprofile mit Statistik – letzteres setzt die Statistik-Phase voraus.
 - **Statistik** ("Letzte Partien", Trefferquote)
 - **Digitaler Rechenblock** (eigenständiges Feature für offline/physische Partien, nicht zu verwechseln mit dem Spielblatt aus Phase 6 – siehe `ManualScoreboardScreen` in `docs/ARCHITECTURE.md`)

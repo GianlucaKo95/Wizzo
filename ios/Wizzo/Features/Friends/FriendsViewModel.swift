@@ -18,12 +18,39 @@ struct FriendRow: Codable, Identifiable, Equatable {
     }
 }
 
-/// Core friend-graph management (Phase 9): search/add by username, accept
-/// or decline incoming requests, cancel outgoing ones, remove an existing
-/// friend. Deliberately doesn't yet cover the web's online-status dot,
-/// "spielt gerade"/ZUSCHAUEN button (needs presence tracking + spectator
-/// mode, neither built yet) or tap-to-profile (needs the stats feature) -
-/// see docs/IOS.md.
+/// Mirrors a row of the `friends_active_rooms` view (014/016/018_*.sql) -
+/// server-computed "which of my accepted friends are currently in a room
+/// that hasn't ended", keyed off auth.uid() on both sides of the friendship
+/// subquery so a caller only ever sees rows for their OWN friends.
+struct FriendActiveRoom: Codable, Identifiable {
+    let roomId: UUID
+    let code: String
+    let phase: String
+    let edition: String
+    let friendUserId: UUID
+    let friendName: String?
+    let round: Int?
+    let playerCount: Int?
+
+    var id: UUID { roomId }
+
+    enum CodingKeys: String, CodingKey {
+        case roomId = "room_id"
+        case code, phase, edition
+        case friendUserId = "friend_user_id"
+        case friendName = "friend_name"
+        case round
+        case playerCount = "player_count"
+    }
+}
+
+/// Core friend-graph management (Phase 9) plus spectator discovery
+/// (Phase 10): search/add by username, accept or decline incoming
+/// requests, cancel outgoing ones, remove an existing friend, see which
+/// friends are currently in a room and watch one. Deliberately doesn't yet
+/// cover the web's general online-status dot (needs presence tracking,
+/// unrelated to friends_active_rooms) or tap-to-profile (needs the stats
+/// feature) - see docs/IOS.md.
 @MainActor
 final class FriendsViewModel: ObservableObject {
     @Published var rows: [FriendRow] = []
@@ -33,8 +60,12 @@ final class FriendsViewModel: ObservableObject {
     @Published var isSending = false
     @Published var message: (text: String, isError: Bool)?
     @Published var busyId: UUID?
+    @Published var activeRooms: [FriendActiveRoom] = []
+    @Published var spectatingRoomId: UUID?
+    @Published var isSpectating = false
 
     private var currentUserId: UUID?
+    private var activeRoomsPollTask: Task<Void, Never>?
 
     var accepted: [FriendRow] { rows.filter { $0.status == "accepted" } }
     var incoming: [FriendRow] {
@@ -50,6 +81,59 @@ final class FriendsViewModel: ObservableObject {
 
     func name(for userId: UUID) -> String {
         usernames[userId] ?? "…"
+    }
+
+    func activeRoom(for userId: UUID) -> FriendActiveRoom? {
+        activeRooms.first { $0.friendUserId == userId }
+    }
+
+    /// Mirrors loadActiveRooms() + its 10s setInterval poll in App.tsx: this
+    /// panel is only open briefly and friends_active_rooms already re-
+    /// derives everything server-side from auth.uid() on every read, so a
+    /// cheap periodic refresh is plenty to catch a friend starting a new
+    /// game while the screen is open - no realtime subscription needed.
+    func startWatchingActiveRooms() {
+        guard activeRoomsPollTask == nil else { return }
+        activeRoomsPollTask = Task {
+            while !Task.isCancelled {
+                await loadActiveRooms()
+                try? await Task.sleep(for: .seconds(10))
+            }
+        }
+    }
+
+    func stopWatchingActiveRooms() {
+        activeRoomsPollTask?.cancel()
+        activeRoomsPollTask = nil
+    }
+
+    func loadActiveRooms() async {
+        do {
+            activeRooms = try await SupabaseService.client
+                .from("friends_active_rooms")
+                .select("room_id, code, phase, edition, friend_user_id, friend_name, round, player_count")
+                .execute()
+                .value
+        } catch {
+            activeRooms = []
+        }
+    }
+
+    /// Mirrors spectate() in App.tsx: spectateRoom (index.ts) checks
+    /// server-side that the caller is actually friends with someone seated
+    /// in the room before inserting into room_spectators - this is purely
+    /// the request, SpectatorView does the actual watching once this
+    /// succeeds.
+    func spectate(_ room: FriendActiveRoom) async {
+        guard !isSpectating else { return }
+        isSpectating = true
+        defer { isSpectating = false }
+        let result = await GameActionClient.call(roomId: room.roomId.uuidString, action: "spectateRoom")
+        if let error = result["error"] as? String {
+            message = (error, true)
+        } else {
+            spectatingRoomId = room.roomId
+        }
     }
 
     func load() async {

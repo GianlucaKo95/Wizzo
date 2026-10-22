@@ -5,6 +5,23 @@ struct FriendsView: View {
     @State private var pendingRemoval: FriendRow?
 
     var body: some View {
+        Group {
+            if let roomId = viewModel.spectatingRoomId {
+                SpectatorView(roomId: roomId) {
+                    viewModel.spectatingRoomId = nil
+                }
+            } else {
+                friendsContent
+            }
+        }
+        .task {
+            await viewModel.load()
+            viewModel.startWatchingActiveRooms()
+        }
+        .onDisappear { viewModel.stopWatchingActiveRooms() }
+    }
+
+    private var friendsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -22,7 +39,6 @@ struct FriendsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.bgDark.ignoresSafeArea())
-        .task { await viewModel.load() }
         .confirmationDialog(
             pendingRemoval.map { "\(viewModel.name(for: viewModel.otherUserId($0))) wirklich entfernen?" } ?? "",
             isPresented: Binding(
@@ -134,14 +150,34 @@ struct FriendsView: View {
                     .padding(.vertical, 10)
             } else {
                 ForEach(viewModel.accepted) { row in
-                    friendRow(row) {
-                        Button {
-                            pendingRemoval = row
-                        } label: {
-                            Image(systemName: "xmark")
-                                .foregroundColor(Theme.ivoryDim)
+                    let otherId = viewModel.otherUserId(row)
+                    let activeRoom = viewModel.activeRoom(for: otherId)
+                    friendRow(row, subtitle: activeRoom.map { "Spielt gerade · Runde \($0.round ?? 0)" }) {
+                        HStack(spacing: 8) {
+                            if let activeRoom {
+                                Button {
+                                    Task { await viewModel.spectate(activeRoom) }
+                                } label: {
+                                    Text("ZUSCHAUEN")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundColor(Theme.gold)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                                .stroke(Theme.gold.opacity(0.4), lineWidth: 1)
+                                        )
+                                }
+                                .disabled(viewModel.isSpectating)
+                            }
+                            Button {
+                                pendingRemoval = row
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .foregroundColor(Theme.ivoryDim)
+                            }
+                            .disabled(viewModel.busyId == row.id)
                         }
-                        .disabled(viewModel.busyId == row.id)
                     }
                 }
             }
@@ -170,7 +206,7 @@ struct FriendsView: View {
         .padding(.bottom, 10)
     }
 
-    private func friendRow<Trailing: View>(_ row: FriendRow, @ViewBuilder trailing: () -> Trailing) -> some View {
+    private func friendRow<Trailing: View>(_ row: FriendRow, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing) -> some View {
         let otherId = viewModel.otherUserId(row)
         return HStack(spacing: 10) {
             Circle()
@@ -181,9 +217,16 @@ struct FriendsView: View {
                         .font(.caption2.weight(.bold))
                         .foregroundColor(Theme.goldLight)
                 )
-            Text(viewModel.name(for: otherId))
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(Theme.ivory)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(viewModel.name(for: otherId))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(Theme.ivory)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(Theme.ivoryDim)
+                }
+            }
             Spacer()
             trailing()
         }
