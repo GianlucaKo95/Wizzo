@@ -15,7 +15,7 @@ final class GameViewModel: ObservableObject {
     private let roomId: UUID
     private var watchTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
-    private var channel: RealtimeChannel?
+    private var channel: RealtimeChannelV2?
     private var aiTriggerPending = false
     private var aiTriggerLastKey: String?
     private var clearTrickPending = false
@@ -241,8 +241,8 @@ final class GameViewModel: ObservableObject {
         let ch = await SupabaseService.client.channel("room-game:\(roomId.uuidString)")
         channel = ch
 
-        let playerChanges = await ch.postgresChanges(AnyAction.self, table: "room_players", filter: .eq("room_id", value: roomId.uuidString))
-        let roomChanges = await ch.postgresChanges(UpdateAction.self, table: "rooms", filter: .eq("id", value: roomId.uuidString))
+        let playerChanges = await ch.postgresChange(AnyAction.self, table: "room_players", filter: .eq("room_id", value: roomId.uuidString))
+        let roomChanges = await ch.postgresChange(UpdateAction.self, table: "rooms", filter: .eq("id", value: roomId.uuidString))
 
         do {
             try await ch.subscribe()

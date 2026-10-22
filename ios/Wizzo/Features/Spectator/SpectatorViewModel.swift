@@ -18,7 +18,7 @@ final class SpectatorViewModel: ObservableObject {
     private let roomId: UUID
     private var watchTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
-    private var channel: RealtimeChannel?
+    private var channel: RealtimeChannelV2?
 
     private static let roomColumns = "id, code, phase, edition, round, max_rounds, dealer, current_player, trump_card, trump_suit, current_trick, last_trick_winner, last_trick_cards, log"
     private static let playerColumns = "id, room_id, user_id, player_index, is_ai, ai_name, connected, bid, tricks_won, score, hand_count"
@@ -77,7 +77,7 @@ final class SpectatorViewModel: ObservableObject {
     private func watchRealtime() async {
         let ch = await SupabaseService.client.channel("spectate:\(roomId.uuidString)")
         channel = ch
-        let roomChanges = await ch.postgresChanges(UpdateAction.self, table: "rooms", filter: .eq("id", value: roomId.uuidString))
+        let roomChanges = await ch.postgresChange(UpdateAction.self, table: "rooms", filter: .eq("id", value: roomId.uuidString))
         do {
             try await ch.subscribe()
         } catch {

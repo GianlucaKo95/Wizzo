@@ -50,7 +50,7 @@ final class AppState: ObservableObject {
     @Published var pendingRoomCodeToJoin: String?
 
     private var presenceTask: Task<Void, Never>?
-    private var presenceChannel: RealtimeChannel?
+    private var presenceChannel: RealtimeChannelV2?
     private var inviteTask: Task<Void, Never>?
 
     func loadInitialSession() async {

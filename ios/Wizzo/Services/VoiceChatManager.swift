@@ -39,7 +39,7 @@ final class VoiceChatManager: NSObject, ObservableObject {
     private var observers: [UUID: PeerConnectionObserver] = [:]
     private var pendingCandidates: [UUID: [RTCIceCandidate]] = [:]
     private var iceServers: [RTCIceServer] = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
-    private var channel: RealtimeChannel?
+    private var channel: RealtimeChannelV2?
     private var signalTask: Task<Void, Never>?
 
     /// One factory for every RTCPeerConnection this manager ever creates,
