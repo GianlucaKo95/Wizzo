@@ -6,7 +6,14 @@
 #   APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (Inhalt der .p8-Datei),
 #   SUPABASE_URL, SUPABASE_ANON_KEY
 
-set -eo pipefail
+# Bewusst kein "set -e": jeder riskante Befehl unten (asc.py purge/create,
+# xcodebuild archive/-exportArchive, altool) hat schon seine eigene manuelle
+# RES=$?-Prüfung mit eigenem Log/Exit-Code - "set -e" würde das Skript beim
+# ersten Fehlschlag sofort an genau dieser Stelle beenden, BEVOR die eigene
+# Prüfung (und damit die eigentliche Fehlermeldung, z.B. aus upload.log)
+# überhaupt erreicht wird. Genau das ist hier real passiert: der altool-
+# Upload schlug fehl, "set -e" killte das Skript augenblicklich, und im
+# Report stand danach nur noch die Überschrift, kein einziges Fehlerdetail.
 REPORT="${REPORT:-report.txt}"
 : > "$REPORT"
 log() { echo "$@" | tee -a "$REPORT"; }
