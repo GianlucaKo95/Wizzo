@@ -6,7 +6,7 @@ Wizzo wird komplett nativ als SwiftUI-App neu gebaut (nicht als Web-Wrapper) –
 
 Kurz zusammengefasst aus der Diskussion, die zu dieser Entscheidung geführt hat: ein reiner Wrapper (z. B. Capacitor) hätte den bestehenden Web-Code 1:1 übernommen, aber eben auch dessen Grenzen – kein wirklich natives Gefühl (Scrollen/Übergänge/Gesten bleiben Web), Sprachchat bricht im Hintergrund ab, Web-Push ist auf iOS unzuverlässig. Da ein echtes natives Gefühl gewünscht war und die PWA ohnehin nicht weiterbetrieben werden soll, baut die App stattdessen die komplette UI in SwiftUI neu, gegen **dasselbe, unveränderte Supabase-Backend** (Postgres/RLS/Realtime/Edge-Function) wie die Web-App – siehe [`ARCHITECTURE.md`](ARCHITECTURE.md) und [`DATABASE.md`](DATABASE.md) für das Backend, das hier 1:1 weiterverwendet wird.
 
-## Stand: Phase 1-5 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten)
+## Stand: Phase 1-6 (Grundgerüst, Auth, Profil, Räume/Lobby, Spieltisch inkl. aller 9 Sonderkarten, Spielblatt & Log)
 
 Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 
@@ -24,12 +24,12 @@ Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
   - Jongleur/George Weasley (`rainbow7`) und Gleis 9¾ (`rainbow9`) (Phase 5) zeigen beim Antippen einen Farb-Dialog (die Farbe, mit der die Karte "kämpft") und spielen dann über `playCard` mit `suit`. Danach läuft serverseitig ein Nachlauf während `phase === "trickEnd"`: Jongleur verlangt von JEDEM Spieler eine Karte zum Weitergeben an den linken Nachbarn (`passCard`, eigener Picker über die ganze Hand); Gleis 9¾ verlangt vom Stichgewinner eine Anpassung seiner Vorhersage um ±1 (`rainbow9Adjust`, mit derselben "−1 nur wenn noch nicht im Ziel"-Einschränkung wie die Web-App). Sind beide im selben Stich, löst der Server Jongleur zuerst auf und Gleis 9¾ erst danach (`pending_rainbow9_deferred`) – rein serverseitig, die App muss das nicht selbst nachbilden.
   - Hexe/Bellatrix (`witch`) (Phase 5) läuft normal über `playCard`; nach Stichgewinn zeigt die App einen zweistufigen Dialog (erst eine Karte aus dem Stich nehmen, dann eine eigene Handkarte dafür abgeben, über `playSpecial`), gefolgt von einer kurzen `witchReveal`-Phase, die das Tausch-Ergebnis anzeigt (client-getriebenes `witchRevealDone` nach 4s, wie im Web-Pendant).
   - Alle drei pending-Zustände (Jongleur/Hexe/Gleis 9¾) existieren serverseitig ausschließlich während `phase === "trickEnd"` – die App zeigt während dieser Zeit statt des normalen "Stich gewinnt …"-Banners den jeweils zuständigen Dialog für die betroffene Person bzw. einen kurzen Warte-Hinweis für alle anderen.
+- **Spielblatt & Spiel-Log** (Phase 6): zwei Sheets, über zwei Icon-Buttons im Spieltisch-Header erreichbar. Das Spielblatt zeigt die `round_history`-Tabelle rundenweise (laufende Summe + Ansage pro Spieler, berechnet wie `computeRunningTotals` in `App.tsx`) plus eine Live-Zeile für die aktuell laufende Runde; wird on-demand beim Öffnen geladen, nicht fortlaufend gepollt (die Tabelle wächst nur einmal pro Runde). Das Log zeigt `rooms.log` (dieselben Einträge wie im Web-Pendant) als einfache Liste.
 - Tab-Leiste (Home/Freunde/Statistik/Profil, siehe `TabKey` in `App.tsx`) – Freunde/Statistik sind weiterhin ehrliche "Kommt noch"-Platzhalter, keine Fake-Daten.
 
 Was **noch nicht** existiert (jeweils eigene, größere Phasen oder gezielte Nacharbeiten):
 
-- Rundenhistorie-Ansicht, Spiel-Log
-- Runde-1-Sonderregel "Indianer Poker" wird serverseitig korrekt erzwungen, aber die App zeigt die dabei eigentlich sichtbaren fremden Handkarten (`visible_hand` in `room_players_view`) noch nicht an – rein visuelle Lücke, keine Regelverletzung
+- Runde-1-Sonderregel "Indianer Poker" wird serverseitig korrekt erzwungen, aber die App zeigt die dabei eigentlich sichtbaren fremden Handkarten (`visible_hand` in `room_players_view`) noch nicht an, und die eigene Hand wird nicht verdeckt dargestellt (wie `faceDown={room.round === 1}` im Web-Pendant) – rein visuelle Lücke, keine Regelverletzung. Erfordert zusätzlich eine neue "Sitzplätze am Tisch"-Darstellung der Mitspielerhände, die es in der App noch gar nicht gibt (bisher nur das Scoreboard oben mit Name/Stichen/Punkten, keine Kartenrückseiten pro Mitspieler)
 - Kein client-seitiges Hervorheben spielbarer/unspielbarer Karten (der Server validiert ohnehin jeden Zug serverseitig und lehnt ungültige mit einer Fehlermeldung ab – das ist bewusst die einzige Fehlerquelle für Phase 3, um die KI-/Sonderkarten-Regellogik nicht ein zweites Mal im Client nachbauen zu müssen)
 - Automatisches Reconnect in ein bereits laufendes Spiel beim App-Start (die Web-App hat das, siehe `checkReconnect` in `App.tsx` - hier bewusst noch nicht repliziert, um die Phasen klein zu halten)
 - Zuschauer-Modus
@@ -105,9 +105,8 @@ Jede weitere Phase bekommt ihren eigenen Ordner unter `Features/` (z. B. `Featur
 
 ## Nächste sinnvolle Phase
 
-Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar – der Spieltisch selbst hat damit funktional Web-Parität erreicht (mit Ausnahme der rein kosmetischen Lücken unten). Sinnvolle nächste Schritte, grob nach Aufwand sortiert:
+Mit Phase 5 sind alle neun Sonderkarten und damit die komplette "30 Jahre"-Edition vollständig spielbar; Phase 6 hat Spielblatt und Log nachgerüstet. Der Spieltisch hat damit funktional praktisch Web-Parität erreicht (mit Ausnahme der Indianer-Poker-Lücke unten). Sinnvolle nächste Schritte, grob nach Aufwand sortiert:
 
-- **Rundenhistorie-Ansicht, Spiel-Log** – beides existiert serverseitig bereits (`round_history`-Tabelle, `rooms.log`), fehlt der App aber komplett als UI.
-- **Runde-1 "Indianer Poker"** – die fremden Handkarten (`visible_hand` in `room_players_view`) anzeigen; rein kosmetisch, der Server erzwingt die Regel bereits korrekt ohne Client-Mithilfe.
+- **Runde-1 "Indianer Poker"** – erfordert eine neue Mitspieler-Handkarten-Darstellung (gibt es noch gar nicht, siehe oben) plus eine verdeckte Darstellung der eigenen Hand in Runde 1; der Server erzwingt die Regel bereits korrekt, es fehlt nur die Anzeige.
 - **Automatisches Reconnect** in ein bereits laufendes Spiel beim App-Start (`checkReconnect`-Äquivalent).
 - Danach die größeren, eigenständigen Features: Zuschauer-Modus, Freunde, Statistik, digitaler Rechenblock, Sprachchat (WebRTC), echte Push-Benachrichtigungen (APNs), Avatar-Upload.

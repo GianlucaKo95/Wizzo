@@ -7,6 +7,8 @@ struct GameView: View {
     @State private var rainbowSuitCardId: String?
     @State private var rainbow7CardId: String?
     @State private var witchTakeCardId: String?
+    @State private var showLog = false
+    @State private var showScoresheet = false
 
     init(roomId: UUID, onLeave: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: GameViewModel(roomId: roomId))
@@ -92,6 +94,7 @@ struct GameView: View {
     private func content(room: Room) -> some View {
         VStack(spacing: 0) {
             header(room: room)
+            toolbarRow
             scoreboard
             Spacer(minLength: 8)
             trickArea(room: room)
@@ -149,6 +152,8 @@ struct GameView: View {
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bgDark.ignoresSafeArea())
+        .sheet(isPresented: $showLog) { logSheet }
+        .sheet(isPresented: $showScoresheet) { scoresheet(room: room) }
     }
 
     // MARK: - Header & scoreboard
@@ -188,6 +193,193 @@ struct GameView: View {
         .padding(.horizontal, 16)
         .padding(.top, 54)
         .padding(.bottom, 10)
+    }
+
+    /// Phase 6: Spiel-Log + Spielblatt (Rundenhistorie) - same two icon
+    /// buttons as App.tsx's IconHistory/IconClipboardList, as plain SF
+    /// Symbols (see AuthView for the existing precedent in this app).
+    private var toolbarRow: some View {
+        HStack(spacing: 18) {
+            Spacer()
+            Button {
+                showLog = true
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 14))
+                    .foregroundColor(Theme.ivoryDim)
+            }
+            Button {
+                Task { await viewModel.loadRoundHistory() }
+                showScoresheet = true
+            } label: {
+                Image(systemName: "tablecells")
+                    .font(.system(size: 14))
+                    .foregroundColor(Theme.ivoryDim)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+
+    private var logSheet: some View {
+        NavigationStack {
+            Group {
+                let entries = viewModel.room?.log ?? []
+                if entries.isEmpty {
+                    Text("Noch keine Einträge")
+                        .font(.caption)
+                        .foregroundColor(Theme.ivoryDim)
+                } else {
+                    // Indices, not \.self, as the id - log entries can repeat
+                    // verbatim (e.g. two players bidding the same number),
+                    // and SwiftUI's List needs a stable unique id per row.
+                    List(Array(entries.enumerated()), id: \.offset) { _, entry in
+                        Text(entry)
+                            .font(.caption)
+                            .foregroundColor(Theme.ivoryDim)
+                            .listRowBackground(Theme.bgDark)
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bgDark.ignoresSafeArea())
+            .navigationTitle("Spiel-Log")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { showLog = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// Mirrors App.tsx's Scoresheet modal: one row per scored round (final
+    /// running total + bid per player) plus, while the game isn't over, a
+    /// live row for the round in progress (current bids/tricks). Data comes
+    /// from `GameViewModel.roundHistory`, fetched on demand when the sheet
+    /// opens (see toolbarRow).
+    private func scoresheet(room: Room) -> some View {
+        let runningByRound = computeRunningTotals()
+        let lastRoundNum = viewModel.roundHistory.last?.round
+        return NavigationStack {
+            ScrollView([.horizontal, .vertical]) {
+                VStack(alignment: .leading, spacing: 0) {
+                    scoresheetHeaderRow
+
+                    ForEach(viewModel.roundHistory) { entry in
+                        scoresheetRow(
+                            label: "R\(entry.round)",
+                            labelColor: Theme.ivory,
+                            cell: { player in
+                                guard let result = entry.results.first(where: { $0.playerIndex == player.playerIndex }),
+                                      let total = runningByRound[entry.round]?[player.playerIndex]
+                                else { return scoresheetCell(primary: "–", secondary: nil, primaryColor: Theme.ivoryDim) }
+                                let isLeaderHere = entry.round == lastRoundNum && isLeader(player)
+                                return scoresheetCell(
+                                    primary: "\(total)",
+                                    secondary: "A:\(result.bid)",
+                                    primaryColor: isLeaderHere ? Theme.gold : Theme.ivory
+                                )
+                            }
+                        )
+                    }
+
+                    if room.phase != "gameEnd" {
+                        scoresheetRow(
+                            label: "R\(room.round ?? 0) ▶",
+                            labelColor: Theme.goldLight,
+                            cell: { player in
+                                let bidText = player.bid.map { "A:\($0)" } ?? "–"
+                                let tricksText = (room.phase == "playing" || room.phase == "trickEnd")
+                                    ? "\(player.tricksWon ?? 0)/\(player.bid.map { String($0) } ?? "?")"
+                                    : nil
+                                return scoresheetCell(primary: bidText, secondary: tricksText, primaryColor: Theme.goldLight)
+                            }
+                        )
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.bgDark.ignoresSafeArea())
+            .navigationTitle("Spielblatt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { showScoresheet = false }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private var scoresheetHeaderRow: some View {
+        HStack(spacing: 0) {
+            Text("RUNDE")
+                .frame(width: 60, alignment: .leading)
+            ForEach(viewModel.players) { player in
+                Text(player.aiName ?? "?")
+                    .frame(width: 64, alignment: .trailing)
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption2.weight(.bold))
+        .foregroundColor(Theme.ivoryDim)
+        .padding(.bottom, 8)
+    }
+
+    private func scoresheetRow<Cell: View>(label: String, labelColor: Color, cell: (RoomPlayer) -> Cell) -> some View {
+        HStack(spacing: 0) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(labelColor)
+                .frame(width: 60, alignment: .leading)
+            ForEach(viewModel.players) { player in
+                cell(player)
+                    .frame(width: 64, alignment: .trailing)
+            }
+        }
+        .padding(.vertical, 6)
+        .overlay(Rectangle().fill(Theme.gold.opacity(0.1)).frame(height: 1), alignment: .top)
+    }
+
+    private func scoresheetCell(primary: String, secondary: String?, primaryColor: Color) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(primary)
+                .font(.caption.weight(.bold))
+                .foregroundColor(primaryColor)
+            if let secondary {
+                Text(secondary)
+                    .font(.caption2)
+                    .foregroundColor(Theme.ivoryDim)
+            }
+        }
+    }
+
+    /// Cumulative `delta` per player per round - mirrors computeRunningTotals
+    /// in App.tsx exactly.
+    private func computeRunningTotals() -> [Int: [Int: Int]] {
+        var acc: [Int: Int] = [:]
+        for player in viewModel.players { acc[player.playerIndex] = 0 }
+        var out: [Int: [Int: Int]] = [:]
+        for entry in viewModel.roundHistory {
+            for player in viewModel.players {
+                if let result = entry.results.first(where: { $0.playerIndex == player.playerIndex }) {
+                    acc[player.playerIndex, default: 0] += result.delta
+                }
+            }
+            out[entry.round] = acc
+        }
+        return out
+    }
+
+    /// Crowns the current leader, but only once scores have actually
+    /// diverged from the 0-0 starting tie - mirrors isLeader in App.tsx.
+    private func isLeader(_ player: RoomPlayer) -> Bool {
+        let maxScore = viewModel.players.map { $0.score ?? 0 }.max() ?? 0
+        return maxScore > 0 && (player.score ?? 0) == maxScore
     }
 
     private var scoreboard: some View {

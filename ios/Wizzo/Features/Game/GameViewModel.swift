@@ -6,6 +6,7 @@ final class GameViewModel: ObservableObject {
     @Published var room: Room?
     @Published var players: [RoomPlayer] = []
     @Published var myHand: [Card] = []
+    @Published var roundHistory: [RoundHistoryEntry] = []
     @Published var currentUserId: UUID?
     @Published var errorMessage: String?
     @Published var isLoading = true
@@ -20,7 +21,7 @@ final class GameViewModel: ObservableObject {
     private var clearTrickPending = false
     private var witchRevealPending = false
 
-    private static let roomColumns = "id, code, phase, edition, round, max_rounds, dealer, current_player, trump_card, trump_suit, current_trick, last_trick_winner, last_trick_cards, pending_rainbow7, pending_rainbow9, pending_witch, witch_swap"
+    private static let roomColumns = "id, code, phase, edition, round, max_rounds, dealer, current_player, trump_card, trump_suit, current_trick, last_trick_winner, last_trick_cards, pending_rainbow7, pending_rainbow9, pending_witch, witch_swap, log"
     private static let playerColumns = "id, room_id, user_id, player_index, is_ai, ai_name, connected, bid, tricks_won, score, hand_count, visible_hand"
 
     var myIndex: Int? {
@@ -89,6 +90,25 @@ final class GameViewModel: ObservableObject {
             maybeScheduleWitchRevealDone()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Fetched on demand (when the Spielblatt sheet opens in GameView), not
+    /// on every poll/realtime tick like `load()` - round_history only grows
+    /// once per round, so there's nothing to keep continuously fresh while
+    /// the sheet is closed.
+    func loadRoundHistory() async {
+        do {
+            roundHistory = try await SupabaseService.client
+                .from("round_history")
+                .select("id, round, results")
+                .eq("room_id", value: roomId)
+                .order("round")
+                .execute()
+                .value
+        } catch {
+            // Best-effort: the Spielblatt sheet just stays empty/stale,
+            // not worth surfacing over the main game view's errorMessage.
         }
     }
 

@@ -36,6 +36,10 @@ struct Room: Codable, Identifiable {
     var pendingRainbow9: Int?
     var pendingWitch: Int?
     var witchSwap: WitchSwap?
+    /// Always present once selected (`not null default '[]'`) - optional
+    /// here only because, like the other game-state fields, the lobby
+    /// screen's narrower column list doesn't select it.
+    var log: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -55,5 +59,6 @@ struct Room: Codable, Identifiable {
         case pendingRainbow9 = "pending_rainbow9"
         case pendingWitch = "pending_witch"
         case witchSwap = "witch_swap"
+        case log
     }
 }
