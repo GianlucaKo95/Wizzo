@@ -20,6 +20,29 @@ enum Theme {
         static let md: CGFloat = 12
         static let lg: CGFloat = 16
     }
+
+    /// Mirrors SUIT_COLORS/SUIT_SYMBOLS in wizard/frontend/src/types.ts -
+    /// the symbols are Hogwarts-house initials (the app's cosmetic theme,
+    /// see cards.ts' HOUSES), not generic suit icons.
+    static func suitColor(_ suit: String?) -> Color {
+        switch suit {
+        case "red": return Color(hex: 0xE63946)
+        case "blue": return Color(hex: 0x457B9D)
+        case "green": return Color(hex: 0x2D6A4F)
+        case "yellow": return Color(hex: 0xE9C46A)
+        default: return ivoryDim
+        }
+    }
+
+    static func suitSymbol(_ suit: String?) -> String {
+        switch suit {
+        case "red": return "G"
+        case "blue": return "R"
+        case "green": return "S"
+        case "yellow": return "H"
+        default: return ""
+        }
+    }
 }
 
 extension Color {

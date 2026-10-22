@@ -64,6 +64,12 @@ final class LobbyViewModel: ObservableObject {
                 .value
             self.room = room
             self.players = players
+            // Once the game actually starts, GameView takes over with its
+            // own Realtime watch/poll - no point running two for the same
+            // room (wasteful, not incorrect, but easy to avoid).
+            if room.phase != "lobby" {
+                stop()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

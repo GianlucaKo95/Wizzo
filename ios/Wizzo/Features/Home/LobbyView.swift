@@ -2,10 +2,12 @@ import SwiftUI
 
 struct LobbyView: View {
     @StateObject private var viewModel: LobbyViewModel
+    let roomId: UUID
     let onLeave: () -> Void
 
     init(roomId: UUID, onLeave: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: LobbyViewModel(roomId: roomId))
+        self.roomId = roomId
         self.onLeave = onLeave
     }
 
@@ -18,13 +20,9 @@ struct LobbyView: View {
             } else if let room = viewModel.room, room.phase == "lobby" {
                 lobbyContent(room: room)
             } else if viewModel.room != nil {
-                // The actual game table isn't built yet (see docs/IOS.md) -
-                // this is an honest placeholder, not a crash, once the host
-                // starts the game and the phase moves past "lobby".
-                ComingSoonView(
-                    title: "Spiel läuft",
-                    subtitle: "Der Spieltisch ist in dieser App-Phase noch nicht gebaut - bitte vorerst in der Web-App weiterspielen."
-                )
+                // Once the host starts the game, this view's own Realtime
+                // watch is no longer needed - GameView runs its own.
+                GameView(roomId: roomId, onLeave: onLeave)
             } else {
                 ComingSoonView(title: "Raum nicht gefunden", subtitle: viewModel.errorMessage ?? "")
             }
