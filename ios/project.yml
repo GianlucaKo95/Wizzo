@@ -58,6 +58,18 @@ targets:
       path: Generated-Info.plist
       properties:
         CFBundleDisplayName: Wizzo
+        # Ohne diese beiden expliziten Einträge landen MARKETING_VERSION/
+        # CURRENT_PROJECT_VERSION aus den Target-Settings oben NICHT in der
+        # kompilierten Info.plist - Xcode injiziert CFBundleShortVersionString/
+        # CFBundleVersion nur automatisch bei GENERATE_INFOPLIST_FILE=YES
+        # (volle Auto-Generierung), nicht bei einer eigenen Info.plist-Datei
+        # wie hier. Ohne das landeten bisher Xcodes eigene Projekt-Defaults
+        # "1.0"/"1" im Build statt unserer Werte - echte Ursache dafür, dass
+        # testflight.sh's Build-Nummer-Bump (CURRENT_PROJECT_VERSION) wirkungslos
+        # blieb und jeder Upload Apples "bereits verwendete Version"-Konflikt
+        # auslöste, sobald der vorherige Build 1 einmal gültig durchkam.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
