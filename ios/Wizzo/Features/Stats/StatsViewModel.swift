@@ -56,8 +56,13 @@ final class StatsViewModel: ObservableObject {
     @Published var stats: UserStats?
     @Published var pastGames: [PastGame]?
 
-    func load() async {
-        guard let userId = try? await SupabaseService.client.auth.session.user.id else { return }
+    /// Pass `userId` to load someone else's stats (FriendProfileView, Phase
+    /// 12) - omit it to load the signed-in user's own (StatsView). Both
+    /// `user_stats` and `game_stats` are readable for any user id, not just
+    /// your own (gs_select is broad, see docs/DATABASE.md), same as the
+    /// web's identical FriendProfileScreen/StatsScreen split.
+    func load(userId: UUID? = nil) async {
+        guard let userId = userId ?? (try? await SupabaseService.client.auth.session.user.id) else { return }
         stats = try? await SupabaseService.client
             .from("user_stats")
             .select()

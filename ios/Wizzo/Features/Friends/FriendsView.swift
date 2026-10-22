@@ -1,14 +1,20 @@
 import SwiftUI
 
 struct FriendsView: View {
+    @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = FriendsViewModel()
     @State private var pendingRemoval: FriendRow?
+    @State private var viewingFriend: (id: UUID, name: String)?
 
     var body: some View {
         Group {
             if let roomId = viewModel.spectatingRoomId {
                 SpectatorView(roomId: roomId) {
                     viewModel.spectatingRoomId = nil
+                }
+            } else if let friend = viewingFriend {
+                FriendProfileView(friendId: friend.id, friendName: friend.name) {
+                    viewingFriend = nil
                 }
             } else {
                 friendsContent
@@ -152,7 +158,11 @@ struct FriendsView: View {
                 ForEach(viewModel.accepted) { row in
                     let otherId = viewModel.otherUserId(row)
                     let activeRoom = viewModel.activeRoom(for: otherId)
-                    friendRow(row, subtitle: activeRoom.map { "Spielt gerade · Runde \($0.round ?? 0)" }) {
+                    let subtitle = activeRoom.map { "Spielt gerade · Runde \($0.round ?? 0)" }
+                        ?? (appState.onlineUserIds.contains(otherId) ? "Online" : "Offline")
+                    friendRow(row, subtitle: subtitle, onTapProfile: {
+                        viewingFriend = (otherId, viewModel.name(for: otherId))
+                    }) {
                         HStack(spacing: 8) {
                             if let activeRoom {
                                 Button {
@@ -206,7 +216,12 @@ struct FriendsView: View {
         .padding(.bottom, 10)
     }
 
-    private func friendRow<Trailing: View>(_ row: FriendRow, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing) -> some View {
+    private func friendRow<Trailing: View>(
+        _ row: FriendRow,
+        subtitle: String? = nil,
+        onTapProfile: (() -> Void)? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
         let otherId = viewModel.otherUserId(row)
         return HStack(spacing: 10) {
             Circle()
@@ -227,6 +242,8 @@ struct FriendsView: View {
                         .foregroundColor(Theme.ivoryDim)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onTapProfile?() }
             Spacer()
             trailing()
         }
@@ -235,5 +252,5 @@ struct FriendsView: View {
 }
 
 #Preview {
-    FriendsView()
+    FriendsView().environmentObject(AppState())
 }

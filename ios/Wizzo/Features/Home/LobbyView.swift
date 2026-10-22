@@ -27,7 +27,10 @@ struct LobbyView: View {
                 ComingSoonView(title: "Raum nicht gefunden", subtitle: viewModel.errorMessage ?? "")
             }
         }
-        .task { await viewModel.start() }
+        .task {
+            await viewModel.start()
+            await viewModel.loadInviteCandidates()
+        }
         .onDisappear { viewModel.stop() }
     }
 
@@ -79,6 +82,8 @@ struct LobbyView: View {
                     .padding(.top, 14)
             }
 
+            invitePicker
+
             Spacer()
 
             if viewModel.isHost {
@@ -114,6 +119,53 @@ struct LobbyView: View {
         .padding(.bottom, 30)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.bgDark.ignoresSafeArea())
+    }
+
+    /// Mirrors the "Freunde einladen" list in GameRoom's Warteraum (App.tsx)
+    /// - shown permanently once seated rather than behind a toggle. Only
+    /// accepted friends not already a seated player show up; inviting just
+    /// writes a `room_invites` row directly (RLS-protected, no edge
+    /// function needed, same as the web).
+    @ViewBuilder
+    private var invitePicker: some View {
+        if let candidates = viewModel.inviteCandidates {
+            let seatedIds = Set(viewModel.players.compactMap(\.userId))
+            let invitable = candidates.filter { !seatedIds.contains($0.id) }
+            if !invitable.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("FREUNDE EINLADEN")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(Theme.ivoryDim)
+                        .padding(.top, 18)
+                    ForEach(invitable) { candidate in
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(Theme.accent)
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Text(candidate.username.prefix(1).uppercased())
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundColor(Theme.goldLight)
+                                )
+                            Text(candidate.username)
+                                .font(.subheadline)
+                                .foregroundColor(Theme.ivory)
+                            Spacer()
+                            let isInvited = viewModel.invitedIds.contains(candidate.id)
+                            Button {
+                                Task { await viewModel.inviteFriend(candidate) }
+                            } label: {
+                                Text(isInvited ? "Eingeladen ✓" : "EINLADEN")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundColor(isInvited ? Theme.ivoryDim : Theme.gold)
+                            }
+                            .disabled(isInvited || viewModel.inviteSendingId == candidate.id)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+            }
+        }
     }
 
     private func playerRow(_ player: RoomPlayer) -> some View {

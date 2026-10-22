@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
+    @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = HomeViewModel()
 
     var body: some View {
@@ -17,6 +18,12 @@ struct HomeView: View {
         .task {
             await viewModel.loadUsername()
             await viewModel.checkReconnect()
+        }
+        .onChange(of: appState.pendingRoomCodeToJoin) { code in
+            guard let code else { return }
+            appState.pendingRoomCodeToJoin = nil
+            viewModel.codeInput = code
+            Task { await viewModel.joinRoom() }
         }
     }
 
@@ -158,5 +165,5 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView()
+    HomeView().environmentObject(AppState())
 }
