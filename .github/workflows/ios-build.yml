@@ -1,0 +1,52 @@
+name: iOS Build
+
+# No Swift compiler is available where this app's Swift code gets written
+# (see "Wichtige Einschränkung" in docs/IOS.md) - every phase so far was
+# verified only by cross-checking SDK/framework signatures against their
+# real source, never by actually compiling. This workflow runs on a real
+# macOS runner with Xcode, so it's the first genuine compiler check for
+# any of it.
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate placeholder secrets
+        # Build-only verification never actually talks to Supabase, so the
+        # real values from Secrets.example.xcconfig's own placeholders are
+        # enough to compile - see that file's own comment for why the
+        # "$()" in the URL isn't a typo.
+        working-directory: ios
+        run: cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Show selected Xcode version
+        run: xcodebuild -version
+
+      - name: Build (iOS Simulator, unsigned)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Wizzo.xcodeproj \
+            -scheme Wizzo \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

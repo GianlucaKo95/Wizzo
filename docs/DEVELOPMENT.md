@@ -93,6 +93,8 @@ docker build -t wizard-turn-addon -f turn/Dockerfile turn
 |---|---|---|
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | automatisch gesetzt | Von Supabase selbst bereitgestellt, kein manuelles Secret nötig |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | für Push nötig | Signieren der Web-Push-Nachrichten; `VAPID_PUBLIC_KEY` muss mit `VITE_VAPID_PUBLIC_KEY` im Frontend übereinstimmen |
+| `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_AUTH_KEY` | für Push an die native App nötig | Apple-Developer-Portal → Keys → ein Auth Key (.p8) für "Apple Push Notifications service (APNs)"; `APNS_AUTH_KEY` ist der **rohe Inhalt** der `.p8`-Datei (inkl. `-----BEGIN/END PRIVATE KEY-----`-Zeilen, echte Zeilenumbrüche erhalten, z. B. `supabase secrets set APNS_AUTH_KEY="$(cat AuthKey_XXXX.p8)"`). Ohne diese drei Secrets wird das native Push-Senden (`sendApnsPush` in `index.ts`) einfach übersprungen, wie bei fehlender VAPID-Konfiguration. Die Bundle-ID ist nicht geheim und steht direkt im Code (`de.koeven.wizzo`) |
+| `APNS_ENV` | optional | `"production"` für TestFlight-extern/App-Store-Builds; alles andere (auch ungesetzt) nutzt den Sandbox-Host, passend zu Debug-Builds direkt aus Xcode |
 | `TURN_SHARED_SECRET` | für Sprachchat nötig | Muss exakt dem `shared_secret` des `wizard_turn`-Add-ons entsprechen – damit signiert die Funktion zeitlich begrenzte ICE-Credentials |
 | `TURN_HOST` | für Sprachchat nötig | Hostname/IP, unter der das TURN-Add-on erreichbar ist |
 | `WIZARD_DEBUG` | optional | `"1"` aktiviert zusätzliches Server-Logging (`dbg(...)`-Aufrufe in `index.ts`) |

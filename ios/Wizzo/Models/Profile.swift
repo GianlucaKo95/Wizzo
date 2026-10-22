@@ -9,10 +9,12 @@ struct Profile: Codable, Identifiable {
     let id: UUID
     var username: String
     var createdAt: Date?
+    var avatarUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case username
         case createdAt = "created_at"
+        case avatarUrl = "avatar_url"
     }
 }

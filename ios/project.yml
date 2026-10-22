@@ -16,6 +16,14 @@ packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: 2.0.0
+  # Community-maintained binary distribution of Google's own compiled
+  # WebRTC (no official SPM package exists - Google deprecated their own
+  # mobile binary distribution, see docs/IOS.md) - verified against the
+  # actual bundled headers of this exact pinned version before writing any
+  # Swift code against it.
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    from: 155.0.0
 
 targets:
   Wizzo:
@@ -25,7 +33,7 @@ targets:
       - Wizzo
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.gianlucako95.wizzo
+        PRODUCT_BUNDLE_IDENTIFIER: de.koeven.wizzo
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
@@ -33,6 +41,14 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_ASSET_PATHS: ""
+    # "development" here is correct for every Xcode/TestFlight-internal
+    # build - Xcode rewrites it to "production" automatically at archive
+    # time for TestFlight-external/App Store builds (standard Apple
+    # tooling behavior, not something this file needs to branch on).
+    entitlements:
+      path: Wizzo/Wizzo.entitlements
+      properties:
+        aps-environment: development
     info:
       path: Generated-Info.plist
       properties:
@@ -46,9 +62,16 @@ targets:
         # equivalent native call never silently crashes the app for lack of
         # a usage string (see docs/IOS.md).
         NSMicrophoneUsageDescription: "Wizzo benötigt Mikrofonzugriff für den optionalen Sprachchat während einer Partie."
+        # Lets a voice chat already in progress keep sending/receiving audio
+        # while the app is backgrounded - the actual reason this whole app
+        # is native instead of a PWA wrapper (see docs/IOS.md).
+        UIBackgroundModes:
+          - audio
         ITSAppUsesNonExemptEncryption: false
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
     dependencies:
       - package: Supabase
         product: Supabase
+      - package: WebRTC
+        product: WebRTC
