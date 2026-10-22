@@ -18,10 +18,15 @@ done
 brew list xcodegen >/dev/null 2>&1 || brew install xcodegen 2>&1 | tail -3 | tee -a "$REPORT"
 
 # Secrets.xcconfig behandelt "//" als Kommentarbeginn, auch innerhalb eines
-# Werts (siehe Config/Secrets.example.xcconfig) - ohne das leere "$()"-Macro
-# direkt nach "https:" würde der Rest der URL verschluckt und ein kaputter
-# SUPABASE_URL-Wert in den Build gebacken.
-SUPABASE_URL_ESCAPED=$(printf '%s' "$SUPABASE_URL" | sed 's#^https://#https:$()//#')
+# Werts (siehe Config/Secrets.example.xcconfig) - das leere "$()"-Macro muss
+# dafür ZWISCHEN den beiden Schrägstrichen stehen, nicht davor: "https:$()//"
+# hat die beiden rohen "/" immer noch direkt nebeneinander im Dateitext (der
+# Kommentar-Scanner arbeitet auf dem rohen Text, vor der Macro-Auflösung),
+# wird also trotzdem ab dort abgeschnitten. Echte Ursache des ersten
+# TestFlight-Absturzes (siehe docs/IOS.md): SUPABASE_URL landete dadurch nur
+# als "https:" in der Info.plist, URL(string:) lieferte nil, und
+# SupabaseService.swift's fatalError() traf genau das sofort beim Start.
+SUPABASE_URL_ESCAPED=$(printf '%s' "$SUPABASE_URL" | sed 's#^https://#https:/$()/#')
 cat > Config/Secrets.xcconfig <<XC
 SUPABASE_URL = ${SUPABASE_URL_ESCAPED}
 SUPABASE_ANON_KEY = ${SUPABASE_ANON_KEY}
