@@ -15,11 +15,16 @@ final class RechenblockViewModel: ObservableObject {
     @Published var viewingGame: ManualGame?
 
     func load() async {
-        guard let userId = userId ?? (try? await SupabaseService.client.auth.session.user.id) else {
+        // Written as two statements rather than `userId ?? (try? await ...)` -
+        // the nil-coalescing operator's autoclosure doesn't consistently
+        // support an `await` on its right-hand side.
+        if userId == nil {
+            userId = try? await SupabaseService.client.auth.session.user.id
+        }
+        guard let userId else {
             isLoading = false
             return
         }
-        self.userId = userId
         do {
             let games: [ManualGame] = try await SupabaseService.client
                 .from("manual_games")

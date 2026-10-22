@@ -62,7 +62,16 @@ final class StatsViewModel: ObservableObject {
     /// your own (gs_select is broad, see docs/DATABASE.md), same as the
     /// web's identical FriendProfileScreen/StatsScreen split.
     func load(userId: UUID? = nil) async {
-        guard let userId = userId ?? (try? await SupabaseService.client.auth.session.user.id) else { return }
+        // Written as two statements rather than `userId ?? (try? await ...)` -
+        // the nil-coalescing operator's autoclosure doesn't consistently
+        // support an `await` on its right-hand side.
+        let resolvedUserId: UUID?
+        if let userId {
+            resolvedUserId = userId
+        } else {
+            resolvedUserId = try? await SupabaseService.client.auth.session.user.id
+        }
+        guard let userId = resolvedUserId else { return }
         stats = try? await SupabaseService.client
             .from("user_stats")
             .select()
