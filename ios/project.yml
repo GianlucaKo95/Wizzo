@@ -33,6 +33,14 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_ASSET_PATHS: ""
+    # "development" here is correct for every Xcode/TestFlight-internal
+    # build - Xcode rewrites it to "production" automatically at archive
+    # time for TestFlight-external/App Store builds (standard Apple
+    # tooling behavior, not something this file needs to branch on).
+    entitlements:
+      path: Wizzo/Wizzo.entitlements
+      properties:
+        aps-environment: development
     info:
       path: Generated-Info.plist
       properties:

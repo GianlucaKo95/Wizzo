@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push@3";
+import { SignJWT, importPKCS8 } from "npm:jose@5";
 
 import {
   SUITS, buildDeck, shuffle, trickWinner, trickWinnerWithoutBomb,
@@ -221,18 +222,91 @@ function json(data, status = 200) {
   });
 }
 
-// Sends a Web Push notification to one player, if they're human, have one
-// or more devices subscribed, and aren't currently present in the room
-// (room_players.connected, maintained by syncPresence from the client's
-// realtime presence channel) - no point pushing "it's your turn" at someone
-// who's already looking at the screen where that's obvious. Never throws -
-// a push provider outage or missing VAPID config should never break the
+// APNs provider token (ES256 JWT, signed with the Apple Push auth key -
+// APNS_AUTH_KEY is the .p8 file's raw PEM content, APNS_KEY_ID/APNS_TEAM_ID
+// come from the same Apple Developer "Keys" page). Apple's own docs say not
+// to mint a fresh one per notification (repeated signing in a short window
+// can trigger a rate limit) - cached module-scope for up to ~50 minutes
+// (Apple rejects tokens older than 60), same "mutable state reused across
+// invocations in a warm instance" pattern as rateMap/friendFailMap above.
+let cachedApnsToken: { jwt: string; signedAt: number } | null = null;
+async function getApnsProviderToken(): Promise<string | null> {
+  const keyId = Deno.env.get("APNS_KEY_ID");
+  const teamId = Deno.env.get("APNS_TEAM_ID");
+  const authKey = Deno.env.get("APNS_AUTH_KEY");
+  if (!keyId || !teamId || !authKey) return null; // not configured - silently skip
+
+  if (cachedApnsToken && Date.now() - cachedApnsToken.signedAt < 50 * 60 * 1000) {
+    return cachedApnsToken.jwt;
+  }
+  const privateKey = await importPKCS8(authKey, "ES256");
+  const jwt = await new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid: keyId })
+    .setIssuedAt()
+    .setIssuer(teamId)
+    .sign(privateKey);
+  cachedApnsToken = { jwt, signedAt: Date.now() };
+  return jwt;
+}
+
+// Sends one APNs push to one device token. `APNS_ENV` picks sandbox
+// (Xcode/TestFlight-internal builds) vs production (TestFlight-external/App
+// Store) - defaults to sandbox, since that's what a build run straight from
+// Xcode during development uses. Dead tokens (BadDeviceToken/Unregistered -
+// uninstalled, or a stale sandbox token hit against production and vice
+// versa) get cleaned up, same as a dead Web Push subscription above.
+async function sendApnsPush(supabase, deviceToken, title, body) {
+  const jwt = await getApnsProviderToken();
+  if (!jwt) return;
+  const bundleId = "com.gianlucako95.wizzo"; // PRODUCT_BUNDLE_IDENTIFIER in project.yml, not secret
+  const host = Deno.env.get("APNS_ENV") === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
+  try {
+    const res = await fetch(`https://${host}/3/device/${deviceToken}`, {
+      method: "POST",
+      headers: {
+        authorization: `bearer ${jwt}`,
+        "apns-topic": bundleId,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+      },
+      body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" } }),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => null);
+      // 410 Unregistered is always a dead token; a 400 is only a dead token
+      // for the specific "BadDeviceToken" reason - every other 400 reason
+      // (BadTopic, PayloadTooLarge, ...) is a real config/payload problem on
+      // THIS send, not evidence the token itself is bad, so only that one
+      // reason should ever delete a row.
+      if (res.status === 410 || (res.status === 400 && errBody?.reason === "BadDeviceToken")) {
+        await upd(supabase.from("apns_device_tokens").delete().eq("device_token", deviceToken), "sendApnsPush.deadToken");
+      } else {
+        console.error("[sendApnsPush] push failed:", res.status, errBody);
+      }
+    }
+  } catch (e) {
+    console.error("[sendApnsPush] error:", e?.message ?? e);
+  }
+}
+
+// Sends a push notification (Web Push and/or native APNs, whichever the
+// player has registered) to one player, if they're human, have at least one
+// registration, and aren't currently present in the room (room_players.
+// connected, maintained by syncPresence from the client's realtime presence
+// channel) - no point pushing "it's your turn" at someone who's already
+// looking at the screen where that's obvious. Never throws - a push
+// provider outage or missing VAPID/APNs config should never break the
 // actual game action that triggered it.
 async function sendTurnPush(supabase, roomId, playerIndex, title, body) {
   try {
     const { data: player } = await supabase.from("room_players")
       .select("user_id, is_ai, connected").eq("room_id", roomId).eq("player_index", playerIndex).maybeSingle();
     if (!player || player.is_ai || !player.user_id || player.connected) return;
+
+    const { data: tokens } = await supabase.from("apns_device_tokens").select("device_token").eq("user_id", player.user_id);
+    if (tokens && tokens.length > 0) {
+      await Promise.all(tokens.map((t) => sendApnsPush(supabase, t.device_token, title, body)));
+    }
 
     const vapidPublic = Deno.env.get("VAPID_PUBLIC_KEY");
     const vapidPrivate = Deno.env.get("VAPID_PRIVATE_KEY");
