@@ -103,6 +103,48 @@ In Xcode:
 
 Nach jeder Änderung an `project.yml` (neues Target-Setting, neue Dependency, …): `xcodegen generate` erneut ausführen. Neue `.swift`-Dateien im `Wizzo/`-Ordner werden von XcodeGen automatisch erkannt (keine manuelle "Add to target"-Pflege).
 
+## TestFlight ohne Mac
+
+Der Workflow `TestFlight` (GitHub → Actions → „TestFlight" → Run workflow) baut Wizzo als Release, signiert automatisch und lädt es zu TestFlight hoch – kein lokaler Mac nötig. Gleiches Muster wie beim Meeterz-Projekt: `ios/ci/asc.py` erzeugt pro Lauf über die App-Store-Connect-API ein frisches Distribution-Zertifikat + App-Store-Profil (statt eines fest hinterlegten P12-Exports) und löscht beides nach ~2 Stunden wieder (`purge`). Dafür einmalig:
+
+### 1. Developer-Account
+1. https://developer.apple.com/programs/enroll/ → als Privatperson anmelden (99 €/Jahr).
+2. Nach der Freigabe: **Team-ID** notieren (developer.apple.com → Account → Mitgliedschaft → „Team-ID", 10 Zeichen).
+
+### 2. App-ID anlegen (developer.apple.com → Certificates, IDs & Profiles → Identifiers → +)
+- Typ **App IDs → App**, Bundle ID **explizit** `de.koeven.wizzo`
+- Capability anhaken: **Push Notifications**
+
+### 3. App in App Store Connect anlegen (appstoreconnect.apple.com → Apps → + → Neue App)
+- Plattform iOS, Name „Wizzo" (falls vergeben, anderen Namen wählen – er kann später geändert werden), Primärsprache Deutsch
+- Bundle ID `de.koeven.wizzo`, SKU frei wählbar (z. B. `wizzo-001`)
+
+### 4. API-Schlüssel erzeugen (App Store Connect → Benutzer und Zugriff → Integrationen → App Store Connect API → +)
+- Name „GitHub CI", Zugriff **Admin** (nötig, damit die CI selbst Zertifikate und Profile anlegen darf – „App Manager" reicht dafür *nicht*)
+- Notieren: **Issuer-ID** (oben auf der Seite) und **Schlüssel-ID**
+- Die `.p8`-Datei **einmalig** herunterladen (sie ist später nicht mehr abrufbar)
+
+### 5. GitHub-Secrets (Repo → Settings → Secrets and variables → Actions → New repository secret)
+| Name | Inhalt |
+|---|---|
+| `APPLE_TEAM_ID` | Team-ID aus Schritt 1 |
+| `ASC_KEY_ID` | Schlüssel-ID aus Schritt 4 |
+| `ASC_ISSUER_ID` | Issuer-ID aus Schritt 4 |
+| `ASC_KEY_P8` | kompletter Inhalt der `.p8`-Datei inkl. `-----BEGIN PRIVATE KEY-----` |
+| `SUPABASE_URL` | wie in `Config/Secrets.xcconfig` lokal |
+| `SUPABASE_ANON_KEY` | wie in `Config/Secrets.xcconfig` lokal |
+
+### 6. Hochladen
+Actions → **TestFlight** → Run workflow. Das Ergebnis steht danach auf dem Branch `testflight-report` (Datei `report.txt`). Nach ca. 10–30 Minuten erscheint der Build in App Store Connect → TestFlight (Verarbeitung durch Apple).
+
+### 7. Tester einladen
+App Store Connect → TestFlight → Interne Tester (bis zu 100 Personen mit Rolle im Team, ohne Prüfung durch Apple) oder Externe Tester (Link, erfordert kurze Beta-Prüfung).
+
+**Hinweise:**
+- Jeder Lauf bekommt automatisch eine neue Build-Nummer (Workflow-Laufnummer, `CURRENT_PROJECT_VERSION`); die Version (`MARKETING_VERSION`, aktuell `1.0.0`) bleibt stehen, bis bewusst eine neue veröffentlicht wird.
+- `aps-environment: development` in `project.yml` wird von Xcode beim Export mit `method: app-store-connect` automatisch auf `production` umgeschrieben – kein manueller Schritt im Skript nötig.
+- Läuft auf dem GitHub-gehosteten `macos-latest`-Runner (anders als bei Meeterz, das einen eigenen selbst gehosteten Mac mit mehrfachen Xcode-Versionen nutzt) – für ein öffentliches Repo kostenlos, kein eigener Mac-Runner nötig.
+
 ## Projektstruktur
 
 ```
@@ -111,6 +153,9 @@ ios/
   Config/
     Secrets.example.xcconfig  # Vorlage, getrackt
     Secrets.xcconfig          # echte Werte, gitignored
+  ci/
+    asc.py                    # App-Store-Connect-API-Helfer (Zertifikat/Profil pro CI-Lauf, kein P12-Export)
+    testflight.sh             # Release-Build + Signierung + TestFlight-Upload, von .github/workflows/testflight.yml aufgerufen
   Wizzo/
     App/
       WizzoApp.swift           # @main - entscheidet Auth- vs. Root-Screen

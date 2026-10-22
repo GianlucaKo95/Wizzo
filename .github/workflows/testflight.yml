@@ -1,0 +1,61 @@
+name: TestFlight
+
+# Baut Wizzo als Release und lädt es zu TestFlight hoch. Nur manuell startbar.
+# Voraussetzungen: bezahlter Apple-Developer-Account, App-ID + App in App
+# Store Connect angelegt, Secrets gesetzt - siehe docs/IOS.md. Gleiches
+# Signing-Muster wie beim Meeterz-Projekt: kein manuell exportiertes P12/
+# Profil, ios/ci/asc.py erzeugt beides pro Lauf frisch über die App-Store-
+# Connect-API. Der Bericht landet auf dem Branch "testflight-report".
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bauen und hochladen
+        id: build
+        continue-on-error: true
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: ./ci/testflight.sh
+
+      - name: Bericht veröffentlichen
+        if: always()
+        run: |
+          {
+            echo "Commit: ${GITHUB_SHA}"
+            echo "Zeit:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Ergebnis: ${{ steps.build.outcome }}"
+            echo
+            cat ios/report.txt 2>/dev/null || echo "(kein Bericht)"
+          } > /tmp/report.txt
+          git config user.name "wizzo-ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout --orphan testflight-report
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/report.txt report.txt
+          git add report.txt
+          git commit -q -m "TestFlight-Bericht ${GITHUB_SHA}"
+          git push -f origin testflight-report
+
+      - name: Ergebnis
+        if: steps.build.outcome == 'failure'
+        run: exit 1
