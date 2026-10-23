@@ -31,6 +31,14 @@ targets:
     platform: iOS
     sources:
       - Wizzo
+      # Explicit folder reference (type: folder) overrides the generic
+      # sweep above for this one path - without it XcodeGen would add each
+      # .webp individually and flatten them into the bundle root, breaking
+      # Card+Art.swift's Bundle lookup, which expects an actual "Cards"
+      # subdirectory to still exist inside the compiled app bundle.
+      - path: Wizzo/Resources/Cards
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.koeven.wizzo

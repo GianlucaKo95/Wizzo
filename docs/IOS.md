@@ -16,7 +16,8 @@ Was aktuell existiert und **echt gegen das Supabase-Projekt funktioniert**:
 - **Profil-Tab**: lädt die eigene `profiles`-Zeile, zeigt Name + Mitglied-seit, funktionierendes Abmelden.
 - **Home-Tab**: Raum erstellen (Edition wählbar – Classic oder "30 Jahre") oder per Code beitreten – ruft dieselben `createRoom`/`joinRoom`-Edge-Function-Aktionen auf wie die Web-App. Beim Öffnen prüft `checkReconnect()` (Phase 8, mirrors `checkReconnect()` in `App.tsx`), ob der eigene `room_players`-Eintrag noch in einem nicht beendeten Raum steckt – falls ja, zeigt ein goldenes Banner den Raumcode mit "FORTSETZEN" (ruft einfach `joinRoom` mit dem bekannten Code erneut auf – die Edge Function lässt ein bestehendes Mitglied in jeder Phase wieder rein) und, nur wenn alle anderen Sitzplätze KI sind, zusätzlich "VERWERFEN" (ruft `leaveRoom` auf, das den Solo-Raum dann komplett löscht statt abzulehnen). Reconnect-Zustand lebt serverseitig (`room_players`-Mitgliedschaft), nicht lokal – maßgeblich für jedes Gerät.
 - **Lobby**: Live-Spielerliste (Supabase-Realtime-Channel auf `rooms`/`room_players`, plus 5s-Poll-Fallback wie im Web-Pendant), Host-Kennzeichnung, "Spiel starten" (ruft `startGame` auf, inkl. derselben KI-Auffüll-Logik bis 3 Sitzplätze), Verlassen.
-- **Spieltisch**: Trumpf wählen (wenn der Dealer einen Zauberer aufdeckt), bieten, Karten ausspielen, Stichanzeige, Rundenende mit Punktestand, "Nächste Runde"/"Nochmal spielen" (Host), KI-Züge (client-getriebenes `triggerAI` nach 2s Verzögerung, genau wie im Web-Pendant) und automatisches `clearTrick` nach 5s. Kartenanzeige ist bewusst nur textbasiert (Wert/Farbsymbol, kein Karten-Artwork) – eine eigene Asset-Pipeline ist nicht Teil dieser Phase.
+- **Spieltisch**: Trumpf wählen (wenn der Dealer einen Zauberer aufdeckt), bieten, Karten ausspielen, Stichanzeige, Rundenende mit Punktestand, "Nächste Runde"/"Nochmal spielen" (Host), KI-Züge (client-getriebenes `triggerAI` nach 2s Verzögerung, genau wie im Web-Pendant) und automatisches `clearTrick` nach 5s.
+- **Kartenbilder & Tisch-Theming** (nachträglich, nach dem ersten echten Geräte-Test über TestFlight – erst da fiel auf, wie groß der optische Unterschied zur PWA tatsächlich war): `CardChipView` zeigt jetzt dieselben WebP-Illustrationen wie die Web-App (`wizard/frontend/public/cards/`, 1:1 nach `ios/Wizzo/Resources/Cards/` kopiert, als `type: folder`-Quelle in `project.yml` – wichtig, sonst flacht XcodeGen die Unterordnerstruktur beim Bündeln ab und `Card.artImageName`s `Bundle`-Lookup mit `subdirectory: "Cards"` liefe ins Leere). `Card+Art.swift` bildet dieselbe Dateinamens-Logik wie `CardView.tsx` nach (Haus-Ordner pro Farbe, `Wizard_1-4`/`Fool_1-4` nach Karten-id, feste Namen pro Sonderkarte), mit In-Memory-Cache (`CardArtCache`) und Text-Fallback falls ein Bild fehlt. iOS dekodiert WebP nativ seit iOS 14, keine zusätzliche Bibliothek nötig. `GameView` bekam dazu einen dem Web nachempfundenen Tisch-Hintergrund (Radial-Gradient statt flacher Fläche), ein "WIZZO"-Branding im Header und Spieler-Badges mit Gold-Glow bei aktivem Spieler – bewusst **nicht** nachgebaut: die kreisförmige Sitzanordnung der Web-App (eigene Positionierungslogik pro Spieleranzahl, separater Scope) und das Cinzel-Schriftbild (Web lädt es per Google-Fonts-`<link>`, native nutzt `.serif`-Systemschrift als Näherung statt eine eigene Font-Datei zu bündeln).
 - **Alle 9 "30 Jahre"-Sonderkarten**:
   - Drache/Seidenschnabel, Fee, Bombe/Elderstab, Vampir/Quirrell (Phase 4) brauchen client-seitig keine eigene Interaktion – sie laufen über das normale `playCard`, der Server behandelt ihre Sonderregeln (Schlagen/Verlieren/Stich-Annullierung/Trumpf-Kopie) selbst; die App zeigt sie nur korrekt an (Kurzlabel + Farbe, mirror von `specialConfigs` in `CardView.tsx`).
   - Werwolf/Lupin (Phase 4) löst eine eigene Phase `choosingWerewolf` aus (wer die Karte zieht, bestimmt die Stichfarbe für die ganze Runde – eigener Picker, analog zum Trumpf-Picker).
@@ -172,6 +173,7 @@ ios/
       RoundHistoryEntry.swift     # mirrors `round_history` + RoundResult (auch von manual_game_rounds genutzt)
       ManualGame.swift             # mirrors `manual_games`/`manual_game_players`/`manual_game_rounds`
       VoiceSignal.swift            # mirrors das {type, from, to, sdp, candidate}-Signaling-Payload aus App.tsx
+      Card+Art.swift                # Kartenbild-Dateinamen-Logik + In-Memory-Cache, mirrors CardView.tsx
     Services/
       SupabaseService.swift     # einziger SupabaseClient, URL/Key aus Info.plist
       GameActionClient.swift     # Swift-Äquivalent zu callGameAction() aus supabase.ts
@@ -188,6 +190,7 @@ ios/
       Profile/                   # Profil-Tab (echte Daten)
     Resources/
       Assets.xcassets/          # App-Icon + Accent-Farbe, aus dem bestehenden Branding generiert
+      Cards/                     # WebP-Kartenbilder, 1:1 aus wizard/frontend/public/cards/ kopiert (als type: folder-Quelle in project.yml)
 ```
 
 Jede weitere Phase bekommt ihren eigenen Ordner unter `Features/` nach demselben Schema: eine `*View.swift` (SwiftUI) + ein `*ViewModel.swift` (`ObservableObject`, hält den `async`-Zugriff auf `SupabaseService.client`).
@@ -200,5 +203,6 @@ Was realistisch bleibt, ist kein neuer großer Block mehr, sondern Politur und e
 
 - **Der erste echte Build in Xcode** – siehe "Wichtige Einschränkung" oben. Nichts hier wurde je kompiliert; das ist der eigentliche nächste Schritt, nicht eine weitere Phase.
 - Die bewusst zurückgestellten Kleinigkeiten aus der "noch nicht existiert"-Liste oben (Sprechende-Indikator, ICE-Restart, Push jenseits von "du bist dran").
-- Digitalisierte Kartenoptik (echtes Artwork statt der text-basierten `CardChipView`) – seit Phase 3 als bewusst ausgeklammerte, separate Asset-Pipeline dokumentiert.
+- Kreisförmige Sitzanordnung um den Tisch (wie in der Web-App) statt der horizontal scrollbaren Spielerleiste – eigene Positionierungslogik pro Spieleranzahl, bewusst nicht Teil des Theming-Passes oben.
+- Gebündelte Cinzel-Schriftdatei statt `.serif`-Systemschrift-Näherung, für pixelgenaues Branding.
 - App-Store-Einreichung selbst (Screenshots, Datenschutzerklärung, Review-Antworten zur Mikrofon-/Benachrichtigungsnutzung) – organisatorisch, nicht Code.

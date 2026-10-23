@@ -30,10 +30,11 @@ extension Card {
     }
 }
 
-/// Minimal text-based card visual - no illustrated card art yet (that's a
-/// separate asset pipeline, not part of this phase's scope, see
-/// docs/IOS.md). Colored via Card.displayColor (suit for number cards,
-/// Theme.specialColor for special cards, gold for wizard/fool).
+/// Illustrated card visual - the same WebP art the web app uses
+/// (Resources/Cards/, see Card+Art.swift), with the same two corner label
+/// pills (value + house sigil) CardView.tsx overlays on top of its art.
+/// Falls back to the old plain text-chip look if an image is missing (e.g.
+/// an id this hasn't been taught to map yet) rather than showing nothing.
 struct CardChipView: View {
     let card: Card
     var isSelected: Bool = false
@@ -42,27 +43,35 @@ struct CardChipView: View {
     /// === 1}` on the web's own-hand CardView. The card is still fully
     /// tappable/playable at its normal position; only the face differs.
     var faceDown: Bool = false
+    /// Trick-end winning card: pulsing gold glow, mirrors CardView.tsx's
+    /// `winner` prop/cardGlow animation.
+    var winner: Bool = false
 
-    private var showsSuitSymbol: Bool {
-        card.suit != nil && card.specialType == nil
+    private var showsSigil: Bool {
+        card.suit != nil && card.specialType == nil && card.type == "number"
     }
 
+    @State private var glow = false
+
     var body: some View {
-        Group {
+        ZStack {
             if faceDown {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(Theme.gold.opacity(0.4))
+                faceDownArt
+            } else if let art = card.artImageName.flatMap(CardArtCache.image(named:)) {
+                Image(uiImage: art)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    // Matches CardView.tsx's objectPosition "center top" -
+                    // the art is portrait character art, cropping from the
+                    // center would cut off faces more often than feet.
+                    .frame(width: 44, height: 60, alignment: .top)
+                    .clipped()
+                cornerLabel(rotated: false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                cornerLabel(rotated: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             } else {
-                VStack(spacing: 2) {
-                    Text(card.label)
-                        .font(.system(size: 18, weight: .heavy, design: .rounded))
-                    if showsSuitSymbol {
-                        Text(Theme.suitSymbol(card.suit))
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                }
-                .foregroundColor(card.displayColor)
+                textFallback
             }
         }
         .frame(width: 44, height: 60)
@@ -70,10 +79,55 @@ struct CardChipView: View {
         .cornerRadius(Theme.Radius.sm)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(isSelected ? Theme.gold : Theme.gold.opacity(0.25), lineWidth: isSelected ? 2 : 1)
+                .stroke(winner ? Theme.gold : isSelected ? Theme.gold : Theme.gold.opacity(0.25), lineWidth: winner || isSelected ? 2 : 1)
         )
+        .shadow(color: winner ? Theme.gold.opacity(glow ? 0.75 : 0.25) : .clear, radius: winner ? (glow ? 10 : 4) : 0)
+        .onAppear {
+            guard winner else { return }
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { glow = true }
+        }
         .offset(y: isSelected ? -8 : 0)
         .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    private var faceDownArt: some View {
+        ZStack {
+            Rectangle().fill(Theme.bgDark)
+            Text("⚡")
+                .font(.system(size: 16))
+                .foregroundColor(Theme.gold.opacity(0.35))
+        }
+    }
+
+    private var textFallback: some View {
+        VStack(spacing: 2) {
+            Text(card.label)
+                .font(.system(size: 18, weight: .heavy, design: .rounded))
+            if showsSigil {
+                Text(Theme.suitSymbol(card.suit))
+                    .font(.system(size: 10, weight: .bold))
+            }
+        }
+        .foregroundColor(card.displayColor)
+    }
+
+    private func cornerLabel(rotated: Bool) -> some View {
+        VStack(spacing: 0) {
+            Text(card.label)
+                .font(.system(size: 9, weight: .heavy, design: .serif))
+                .foregroundColor(card.displayColor)
+            if showsSigil {
+                Text(Theme.suitSymbol(card.suit))
+                    .font(.system(size: 6, weight: .bold))
+                    .foregroundColor(card.displayColor)
+            }
+        }
+        .padding(.horizontal, 3)
+        .padding(.vertical, 1)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(3)
+        .rotationEffect(rotated ? .degrees(180) : .zero)
+        .padding(rotated ? [.bottom, .trailing] : [.top, .leading], 3)
     }
 }
 
@@ -81,7 +135,8 @@ struct CardChipView: View {
     HStack {
         CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil))
         CardChipView(card: Card(id: "wizard-0", type: "wizard", suit: nil, value: 14, specialType: nil))
-        CardChipView(card: Card(id: "fool-0", type: "fool", suit: nil, value: 0, specialType: nil))
+        CardChipView(card: Card(id: "dragon", type: "special", suit: nil, value: 0, specialType: "dragon"))
+        CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil), faceDown: true)
     }
     .padding()
     .background(Theme.bgDark)

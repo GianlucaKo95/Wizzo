@@ -99,7 +99,6 @@ struct GameView: View {
     private func content(room: Room) -> some View {
         VStack(spacing: 0) {
             header(room: room)
-            toolbarRow
             scoreboard
             Spacer(minLength: 8)
             trickArea(room: room)
@@ -156,99 +155,125 @@ struct GameView: View {
         }
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.bgDark.ignoresSafeArea())
+        .background(tableBackground)
         .sheet(isPresented: $showLog) { logSheet }
         .sheet(isPresented: $showScoresheet) { scoresheet(room: room) }
     }
 
     // MARK: - Header & scoreboard
 
+    /// Mirrors App.tsx's table surface: a dark-green radial "wood grain"
+    /// base plus a vignette toward the edges. Skips the web's extra
+    /// repeating-gradient grain streaks and SVG noise overlay (CPU-cheap on
+    /// a browser's compositor, not worth the complexity of a Canvas-drawn
+    /// equivalent here) - the radial base + vignette alone already reads as
+    /// the same felt-table look instead of flat Theme.bgDark.
+    private var tableBackground: some View {
+        ZStack {
+            RadialGradient(
+                colors: [Color(hex: 0x3B4A41), Color(hex: 0x232E28), Color(hex: 0x101713)],
+                center: UnitPoint(x: 0.5, y: 0.35),
+                startRadius: 0,
+                endRadius: 420
+            )
+            RadialGradient(
+                colors: [.clear, .clear, Color.black.opacity(0.38)],
+                center: UnitPoint(x: 0.5, y: 0.4),
+                startRadius: 180,
+                endRadius: 480
+            )
+        }
+        .ignoresSafeArea()
+    }
+
     private func header(room: Room) -> some View {
-        HStack {
-            Button {
+        VStack(spacing: 2) {
+            HStack {
+                Text("RUNDE \(room.round ?? 0)/\(room.maxRounds ?? 0)")
+                    .font(.system(size: 11, weight: .bold, design: .serif))
+                    .foregroundColor(.white.opacity(0.65))
+
+                Spacer()
+
+                Text("WIZZO")
+                    .font(.system(size: 16, weight: .bold, design: .serif))
+                    .tracking(4)
+                    .foregroundColor(Theme.gold)
+
+                Spacer()
+
+                if let trump = room.trumpCard {
+                    VStack(spacing: 1) {
+                        Text("TRUMPF")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.6))
+                        CardChipView(card: trump)
+                            .scaleEffect(0.6)
+                            .frame(width: 30, height: 40)
+                    }
+                } else {
+                    // Keeps the WIZZO title centered even before a trump is
+                    // revealed - an empty spacer the same rough width as the
+                    // trump card slot on the other side.
+                    Color.clear.frame(width: 50)
+                }
+            }
+            toolbarRow
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
+        .background(
+            LinearGradient(colors: [Color.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom)
+        )
+    }
+
+    /// Icon row below the title bar: voice controls, Log, Spielblatt,
+    /// Verlassen - mirrors the right-hand icon cluster in App.tsx's header
+    /// (mic/history/scoresheet/leave, same order), as circular gold-ringed
+    /// buttons instead of bare SF Symbols for closer visual parity with the
+    /// web's `goldBtn()` pill styling.
+    private var toolbarRow: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            voiceControls
+            toolbarIcon("clock.arrow.circlepath") { showLog = true }
+            toolbarIcon("tablecells") {
+                Task { await viewModel.loadRoundHistory() }
+                showScoresheet = true
+            }
+            toolbarIcon("xmark") {
                 Task {
                     await viewModel.leave()
                     onLeave()
                 }
-            } label: {
-                Text("← VERLASSEN")
-                    .font(.caption.weight(.bold))
-                    .foregroundColor(Theme.ivoryDim)
-            }
-
-            Spacer()
-
-            Text("RUNDE \(room.round ?? 0)/\(room.maxRounds ?? 0)")
-                .font(.caption.weight(.bold))
-                .foregroundColor(Theme.ivoryDim)
-
-            Spacer()
-
-            if let trump = room.trumpCard {
-                HStack(spacing: 4) {
-                    Text("TRUMPF")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundColor(Theme.ivoryDim)
-                    CardChipView(card: trump)
-                        .scaleEffect(0.55)
-                        .frame(width: 26, height: 34)
-                }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 54)
-        .padding(.bottom, 10)
     }
 
-    /// Phase 6: Spiel-Log + Spielblatt (Rundenhistorie) - same two icon
-    /// buttons as App.tsx's IconHistory/IconClipboardList, as plain SF
-    /// Symbols (see AuthView for the existing precedent in this app).
-    private var toolbarRow: some View {
-        HStack(spacing: 18) {
-            voiceControls
-            Spacer()
-            Button {
-                showLog = true
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 14))
-                    .foregroundColor(Theme.ivoryDim)
-            }
-            Button {
-                Task { await viewModel.loadRoundHistory() }
-                showScoresheet = true
-            } label: {
-                Image(systemName: "tablecells")
-                    .font(.system(size: 14))
-                    .foregroundColor(Theme.ivoryDim)
-            }
+    private func toolbarIcon(_ systemName: String, tinted: Color = Theme.ivoryDim, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(tinted)
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Theme.gold.opacity(0.25), lineWidth: 1))
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
     }
 
-    /// Compact icon-only pair instead of the Lobby's big labeled buttons -
-    /// a text button here would cover handcards, same reasoning App.tsx
-    /// gives for using a small header icon during an active game instead of
-    /// the Warteraum's full-width card.
     @ViewBuilder
     private var voiceControls: some View {
-        Button {
+        toolbarIcon(
+            voice.enabled && !voice.muted ? "mic.fill" : "mic.slash.fill",
+            tinted: voice.enabled && !voice.muted ? Theme.success : Theme.ivoryDim
+        ) {
             if voice.enabled { voice.toggleMute() } else { Task { await voice.enableVoice() } }
-        } label: {
-            Image(systemName: voice.enabled && !voice.muted ? "mic.fill" : "mic.slash.fill")
-                .font(.system(size: 13))
-                .foregroundColor(voice.enabled && !voice.muted ? Theme.success : Theme.ivoryDim)
         }
         .disabled(voice.connecting)
         if voice.enabled {
-            Button {
-                Task { await voice.disableVoice() }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11))
-                    .foregroundColor(Theme.ivoryDim)
-            }
+            toolbarIcon("xmark.circle") { Task { await voice.disableVoice() } }
         }
     }
 
@@ -413,35 +438,53 @@ struct GameView: View {
         return maxScore > 0 && (player.score ?? 0) == maxScore
     }
 
+    /// Mirrors App.tsx's PlayerSeat pill (gradient background + gold glow
+    /// while it's their turn, 🤖/👤 avatar, name in a serif face) - kept in
+    /// this view's existing horizontal-scroll row rather than the web's
+    /// absolute-positioned seats around the table, which would need its own
+    /// per-player-count layout logic (out of scope for this styling pass).
     private var scoreboard: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ForEach(viewModel.players) { player in
                     let isTurn = viewModel.room?.currentPlayer == player.playerIndex
                     VStack(spacing: 2) {
-                        Text(player.aiName ?? "?")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundColor(isTurn ? Theme.gold : Theme.ivory)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(player.isAi ? "🤖" : "👤")
+                                .font(.system(size: 10))
+                            Text(player.aiName ?? "?")
+                                .font(.system(size: 12, weight: .bold, design: .serif))
+                                .foregroundColor(isTurn ? Theme.gold : .white)
+                                .lineLimit(1)
+                            if let userId = player.userId, voice.participantIds.contains(userId) {
+                                Image(systemName: "mic.fill")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
+                        }
                         Text("\(player.tricksWon ?? 0)/\(player.bid.map { String($0) } ?? "–")")
                             .font(.caption2)
                             .foregroundColor(Theme.ivoryDim)
                         Text("\(player.score ?? 0)")
                             .font(.caption.weight(.bold))
                             .foregroundColor(Theme.ivory)
-                        if let userId = player.userId, voice.participantIds.contains(userId) {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 9))
-                                .foregroundColor(Theme.ivoryDim)
-                        }
                         if let room = viewModel.room {
                             handIndicator(for: player, room: room)
                         }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(isTurn ? Theme.accent : Color.clear)
+                    .background(
+                        isTurn
+                            ? AnyView(LinearGradient(colors: [Theme.accent.opacity(0.96), Theme.accentLight.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            : AnyView(Color.black.opacity(0.4))
+                    )
                     .cornerRadius(Theme.Radius.sm)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(isTurn ? Theme.gold : Theme.gold.opacity(0.3), lineWidth: isTurn ? 2 : 1)
+                    )
+                    .shadow(color: isTurn ? Theme.gold.opacity(0.5) : .clear, radius: isTurn ? 10 : 0)
                 }
             }
             .padding(.horizontal, 16)
@@ -489,7 +532,7 @@ struct GameView: View {
                 HStack(spacing: 10) {
                     ForEach(entries) { entry in
                         VStack(spacing: 4) {
-                            CardChipView(card: entry.card)
+                            CardChipView(card: entry.card, winner: room.phase == "trickEnd" && entry.playerIndex == room.lastTrickWinner)
                             Text(nameFor(playerIndex: entry.playerIndex))
                                 .font(.caption2)
                                 .foregroundColor(Theme.ivoryDim)
