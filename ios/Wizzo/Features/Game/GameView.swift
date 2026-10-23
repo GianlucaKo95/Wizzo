@@ -367,7 +367,11 @@ struct GameView: View {
     /// Verlassen - mirrors the right-hand icon cluster in App.tsx's header
     /// (mic/history/scoresheet/leave, same order), as circular gold-ringed
     /// buttons instead of bare SF Symbols for closer visual parity with the
-    /// web's `goldBtn()` pill styling.
+    /// web's `goldBtn()` pill styling. Centered under WIZZO rather than
+    /// right-aligned under the trump card - right-aligned put it directly
+    /// over the top-right seat badge's column (seatAnchor's x: 0.78),
+    /// half-covering it; centering clears both the top-left and top-right
+    /// seat columns without needing to shrink anything else.
     private var toolbarRow: some View {
         HStack(spacing: 8) {
             Spacer()
@@ -383,6 +387,7 @@ struct GameView: View {
                     onLeave()
                 }
             }
+            Spacer()
         }
     }
 
