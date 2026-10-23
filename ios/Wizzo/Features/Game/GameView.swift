@@ -97,9 +97,19 @@ struct GameView: View {
     }
 
     private func content(room: Room) -> some View {
+        ZStack {
+            mainContent(room: room)
+            opponentSeatsOverlay(room: room)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(tableBackground)
+        .sheet(isPresented: $showLog) { logSheet }
+        .sheet(isPresented: $showScoresheet) { scoresheet(room: room) }
+    }
+
+    private func mainContent(room: Room) -> some View {
         VStack(spacing: 0) {
             header(room: room)
-            scoreboard
             Spacer(minLength: 8)
             trickArea(room: room)
             Spacer(minLength: 8)
@@ -137,6 +147,8 @@ struct GameView: View {
                 EmptyView()
             }
 
+            mySeatBadge(room: room)
+
             let myIndexForHand = viewModel.myIndex
             let handConsumedByPendingAction =
                 (myIndexForHand != nil && room.pendingRainbow7?.contains(myIndexForHand!) == true) ||
@@ -154,13 +166,133 @@ struct GameView: View {
             }
         }
         .padding(.bottom, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(tableBackground)
-        .sheet(isPresented: $showLog) { logSheet }
-        .sheet(isPresented: $showScoresheet) { scoresheet(room: room) }
     }
 
-    // MARK: - Header & scoreboard
+    // MARK: - Seating
+
+    /// Mirrors getSeatPositions() in App.tsx: every player gets a position
+    /// name relative to the viewer's own seat ("bottom", never floated -
+    /// mySeatBadge shows it inline instead), the exact same offset→position
+    /// mapping per player count (2-6).
+    private func seatEntries(room: Room) -> [(player: RoomPlayer, position: String)] {
+        let n = viewModel.players.count
+        guard n > 0 else { return [] }
+        let myIdx = max(viewModel.myIndex ?? 0, 0)
+        return viewModel.players.enumerated().map { i, player in
+            let offset = (i - myIdx + n) % n
+            let position: String
+            if offset == 0 { position = "bottom" }
+            else if n == 2 { position = "top" }
+            else if n == 3 { position = offset == 1 ? "top-left" : "top-right" }
+            else if n == 4 { position = offset == 1 ? "left" : offset == 2 ? "top" : "right" }
+            else if n == 5 { position = offset == 1 ? "left" : offset == 2 ? "top-left" : offset == 3 ? "top-right" : "right" }
+            else if n == 6 { position = offset == 1 ? "left" : offset == 2 ? "top-left" : offset == 3 ? "top" : offset == 4 ? "top-right" : "right" }
+            else { position = "top" }
+            return (player, position)
+        }
+    }
+
+    /// Fractional (x, y) within the table area per named position - mirrors
+    /// seatPos() in App.tsx's percentage/clamp() values, simplified to plain
+    /// fractions since SwiftUI's GeometryReader already gives the actual
+    /// table size to multiply against.
+    private func seatAnchor(for position: String) -> UnitPoint {
+        switch position {
+        case "top": return UnitPoint(x: 0.5, y: 0.16)
+        case "top-left": return UnitPoint(x: 0.22, y: 0.16)
+        case "top-right": return UnitPoint(x: 0.78, y: 0.16)
+        case "left": return UnitPoint(x: 0.14, y: 0.46)
+        case "right": return UnitPoint(x: 0.86, y: 0.46)
+        default: return UnitPoint(x: 0.5, y: 0.16)
+        }
+    }
+
+    /// The opponent seats floated around the table - mirrors the
+    /// `seats.filter(position !== "bottom").map(PlayerSeat)` loop in
+    /// App.tsx. The viewer's own seat is never in here (mySeatBadge below).
+    private func opponentSeatsOverlay(room: Room) -> some View {
+        GeometryReader { geo in
+            ForEach(seatEntries(room: room).filter { $0.position != "bottom" }, id: \.player.id) { entry in
+                seatBadge(player: entry.player, isMe: false, room: room)
+                    .position(
+                        x: geo.size.width * seatAnchor(for: entry.position).x,
+                        y: geo.size.height * seatAnchor(for: entry.position).y
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The viewer's own seat pill - mirrors App.tsx's separate `mySeat`
+    /// block, shown inline right above the hand instead of floated with a
+    /// guessed pixel offset (SwiftUI's normal layout flow already puts it
+    /// in the right place without needing to know the hand area's height).
+    @ViewBuilder
+    private func mySeatBadge(room: Room) -> some View {
+        if let mine = seatEntries(room: room).first(where: { $0.position == "bottom" })?.player {
+            seatBadge(player: mine, isMe: true, room: room)
+                .padding(.bottom, 4)
+        }
+    }
+
+    /// Shared seat pill content - mirrors App.tsx's PlayerSeat (gradient +
+    /// gold glow while it's their turn, 🤖/👤 avatar, serif name, mic/✓
+    /// indicators, score + tricks/bid).
+    private func seatBadge(player: RoomPlayer, isMe: Bool, room: Room) -> some View {
+        let isActive = room.currentPlayer == player.playerIndex
+        let hasPlayed = (room.currentTrick ?? []).contains { $0.playerIndex == player.playerIndex }
+        return VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Text(player.isAi ? "🤖" : "👤")
+                    .font(.system(size: 10))
+                Text(player.aiName ?? "?")
+                    .font(.system(size: 12, weight: .bold, design: .serif))
+                    .foregroundColor(isActive ? Theme.gold : .white)
+                    .lineLimit(1)
+                if !player.isAi, let userId = player.userId, voice.participantIds.contains(userId) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                if hasPlayed {
+                    Text("✓")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(Theme.gold)
+                }
+            }
+            HStack(spacing: 6) {
+                Text("\(player.score ?? 0)")
+                    .font(.system(size: 13, weight: .bold, design: .serif))
+                    .foregroundColor(Color(hex: 0xF4D03F))
+                if player.bid != nil {
+                    Text("\(player.tricksWon ?? 0)/\(player.bid.map { String($0) } ?? "?")")
+                        .font(.caption2)
+                        .foregroundColor(Theme.ivoryDim)
+                } else if room.phase == "bidding" {
+                    Text("…")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                if !isMe { handIndicator(for: player, room: room) }
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            isActive
+                ? AnyView(LinearGradient(colors: [Theme.accent.opacity(0.96), Theme.accentLight.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                : AnyView(Color.black.opacity(0.55))
+        )
+        .cornerRadius(Theme.Radius.sm)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(isActive ? Theme.gold : Theme.gold.opacity(0.3), lineWidth: isActive ? 2 : 1)
+        )
+        .shadow(color: isActive ? Theme.gold.opacity(0.5) : .clear, radius: isActive ? 10 : 0)
+        .frame(minWidth: 70)
+    }
+
+    // MARK: - Header
 
     /// Mirrors App.tsx's table surface: a dark-green radial "wood grain"
     /// base plus a vignette toward the edges. Skips the web's extra
@@ -436,60 +568,6 @@ struct GameView: View {
     private func isLeader(_ player: RoomPlayer) -> Bool {
         let maxScore = viewModel.players.map { $0.score ?? 0 }.max() ?? 0
         return maxScore > 0 && (player.score ?? 0) == maxScore
-    }
-
-    /// Mirrors App.tsx's PlayerSeat pill (gradient background + gold glow
-    /// while it's their turn, 🤖/👤 avatar, name in a serif face) - kept in
-    /// this view's existing horizontal-scroll row rather than the web's
-    /// absolute-positioned seats around the table, which would need its own
-    /// per-player-count layout logic (out of scope for this styling pass).
-    private var scoreboard: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(viewModel.players) { player in
-                    let isTurn = viewModel.room?.currentPlayer == player.playerIndex
-                    VStack(spacing: 2) {
-                        HStack(spacing: 4) {
-                            Text(player.isAi ? "🤖" : "👤")
-                                .font(.system(size: 10))
-                            Text(player.aiName ?? "?")
-                                .font(.system(size: 12, weight: .bold, design: .serif))
-                                .foregroundColor(isTurn ? Theme.gold : .white)
-                                .lineLimit(1)
-                            if let userId = player.userId, voice.participantIds.contains(userId) {
-                                Image(systemName: "mic.fill")
-                                    .font(.system(size: 8))
-                                    .foregroundColor(.white.opacity(0.4))
-                            }
-                        }
-                        Text("\(player.tricksWon ?? 0)/\(player.bid.map { String($0) } ?? "–")")
-                            .font(.caption2)
-                            .foregroundColor(Theme.ivoryDim)
-                        Text("\(player.score ?? 0)")
-                            .font(.caption.weight(.bold))
-                            .foregroundColor(Theme.ivory)
-                        if let room = viewModel.room {
-                            handIndicator(for: player, room: room)
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        isTurn
-                            ? AnyView(LinearGradient(colors: [Theme.accent.opacity(0.96), Theme.accentLight.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            : AnyView(Color.black.opacity(0.4))
-                    )
-                    .cornerRadius(Theme.Radius.sm)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(isTurn ? Theme.gold : Theme.gold.opacity(0.3), lineWidth: isTurn ? 2 : 1)
-                    )
-                    .shadow(color: isTurn ? Theme.gold.opacity(0.5) : .clear, radius: isTurn ? 10 : 0)
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-        .padding(.bottom, 4)
     }
 
     /// Shows what's known about an opponent's hand: nothing for myself (my
