@@ -1,0 +1,42 @@
+Commit: ab2aea84009a3f607fd5a670053008a38deb9362
+Zeit:   2026-10-23T11:49:39Z
+Ergebnis: success
+
+✔︎ Bottle xcodegen (2.46.0)
+[34m==>[0m [1mPouring xcodegen--2.46.0.arm64_tahoe.bottle.1.tar.gz[0m
+🍺  /opt/homebrew/Cellar/xcodegen/2.46.0: 38 files, 7.4MB
+
+== Alte CI-Zertifikate aufräumen ==
+gelöscht: profiles JHDAUMUNZG Wizzo CI 9-1792732468
+gelöscht: certificates 9F7UGTTQFN Wizzo CI 9-1792732468
+
+== Zertifikat und Profil erzeugen ==
+Zertifikat: Apple Distribution: Gianluca Köhni 2027-10-23T11:35:47.000+00:00
+Profil: Wizzo CI 10-1792755946 91180543-095b-46c3-9264-52e1da5b1893
+1 identity imported.
+  1) F4BF0ED296A089C53C849A50C1EF5E27B42E900B "Apple Distribution: Gianluca Köhni (V47X62H4S2)"
+     1 valid identities found
+⚙️  Generating plists...
+⚙️  Generating project...
+⚙️  Writing project...
+Created project at /Users/runner/work/Wizzo/Wizzo/ios/Wizzo.xcodeproj
+
+== Archivieren ==
+** ARCHIVE SUCCEEDED **
+
+== Exportieren (lokal, Verteilungs-Signatur) ==
+** EXPORT SUCCEEDED **
+Exported Wizzo to: /Users/runner/work/Wizzo/Wizzo/ios/build/export
+IPA: build/export/Wizzo.ipa
+
+== Hochladen zu TestFlight (altool) ==
+Running altool at path '/Applications/Xcode_26.6.app/Contents/SharedFrameworks/ContentDelivery.framework/Resources/altool'...
+
+2026-10-23 11:49:39.273  INFO: [ContentDelivery.Uploader.B19038440] 
+==========================================
+UPLOAD SUCCEEDED with no errors
+Delivery UUID: c534f71d-cbb4-4777-a67d-b1fe67e01dbb
+Transferred 8186034 bytes in 0.147 seconds (55.7MB/s, 445.680Mbps)
+==========================================
+No errors uploading archive at 'build/export/Wizzo.ipa'.
+Hochgeladen: Version 1.0.0 Build 10
