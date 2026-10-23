@@ -213,11 +213,16 @@ struct GameView: View {
     private func opponentSeatsOverlay(room: Room) -> some View {
         GeometryReader { geo in
             ForEach(seatEntries(room: room).filter { $0.position != "bottom" }, id: \.player.id) { entry in
-                seatBadge(player: entry.player, isMe: false, room: room)
-                    .position(
-                        x: geo.size.width * seatAnchor(for: entry.position).x,
-                        y: geo.size.height * seatAnchor(for: entry.position).y
-                    )
+                VStack(spacing: 4) {
+                    if let visible = indianPokerVisibleCard(for: entry.player, room: room) {
+                        CardChipView(card: visible, size: .small)
+                    }
+                    seatBadge(player: entry.player, isMe: false, room: room)
+                }
+                .position(
+                    x: geo.size.width * seatAnchor(for: entry.position).x,
+                    y: geo.size.height * seatAnchor(for: entry.position).y
+                )
             }
         }
         .allowsHitTesting(false)
@@ -339,9 +344,7 @@ struct GameView: View {
                         Text("TRUMPF")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundColor(.white.opacity(0.6))
-                        CardChipView(card: trump)
-                            .scaleEffect(0.6)
-                            .frame(width: 30, height: 40)
+                        CardChipView(card: trump, size: .small)
                     }
                 } else {
                     // Keeps the WIZZO title centered even before a trump is
@@ -570,30 +573,31 @@ struct GameView: View {
         return maxScore > 0 && (player.score ?? 0) == maxScore
     }
 
-    /// Shows what's known about an opponent's hand: nothing for myself (my
-    /// own hand is the handArea below), their real card(s) if `visibleHand`
-    /// is non-null (Runde 1 "Indianer Poker" - the room_players_view
-    /// definition in 000_full_reset.sql only fills it in during round 1),
-    /// otherwise a plain face-down count. Only shown while a hand is
-    /// actually in play.
+    /// Shows what's known about an opponent's hand - the face-down count
+    /// only; a Runde-1 "Indianer Poker" visible card renders separately,
+    /// above the seat badge (see indianPokerVisibleCard/opponentSeatsOverlay)
+    /// rather than cramped inline here. Only shown while a hand is actually
+    /// in play.
     @ViewBuilder
     private func handIndicator(for player: RoomPlayer, room: Room) -> some View {
         let handVisiblePhases = ["choosingTrump", "choosingWerewolf", "bidding", "playing", "trickEnd"]
         if player.userId == viewModel.currentUserId || !handVisiblePhases.contains(room.phase) {
             EmptyView()
-        } else if let visible = player.visibleHand, !visible.isEmpty {
-            HStack(spacing: 2) {
-                ForEach(visible) { card in
-                    CardChipView(card: card)
-                        .scaleEffect(0.4)
-                        .frame(width: 18, height: 24)
-                }
-            }
-        } else if let count = player.handCount, count > 0 {
+        } else if let count = player.handCount, count > 0, (player.visibleHand?.isEmpty ?? true) {
             Text("🂠 ×\(count)")
                 .font(.caption2)
                 .foregroundColor(Theme.ivoryDim)
         }
+    }
+
+    /// Runde 1 "Indianer Poker": the one card an opponent was dealt is
+    /// visible to everyone but themselves (`room_players_view` only fills
+    /// `visible_hand` in round 1, see 000_full_reset.sql) - mirrors the
+    /// `visibleCard && <CardView small />` sibling shown above the pill in
+    /// App.tsx's PlayerSeat, rather than squeezed inline next to the score.
+    private func indianPokerVisibleCard(for player: RoomPlayer, room: Room) -> Card? {
+        guard room.round == 1, player.userId != viewModel.currentUserId else { return nil }
+        return player.visibleHand?.first
     }
 
     // MARK: - Trick area
@@ -610,7 +614,7 @@ struct GameView: View {
                 HStack(spacing: 10) {
                     ForEach(entries) { entry in
                         VStack(spacing: 4) {
-                            CardChipView(card: entry.card, winner: room.phase == "trickEnd" && entry.playerIndex == room.lastTrickWinner)
+                            CardChipView(card: entry.card, winner: room.phase == "trickEnd" && entry.playerIndex == room.lastTrickWinner, size: .small)
                             Text(nameFor(playerIndex: entry.playerIndex))
                                 .font(.caption2)
                                 .foregroundColor(Theme.ivoryDim)
@@ -692,15 +696,39 @@ struct GameView: View {
         .padding(.vertical, 10)
     }
 
+    /// Mirrors forbiddenDealerBid() in types.ts: the one bid value the
+    /// dealer isn't allowed to make, because it would let the sum of every
+    /// bid exactly equal the round's trick count (Stichzwang - the one
+    /// outcome Wizard's rules forbid, so somebody is always guaranteed
+    /// wrong). nil when the current bidder isn't the dealer, or when no bid
+    /// value in range would actually hit that sum.
+    private func dealerForbiddenBid(room: Room) -> Int? {
+        guard let dealer = room.dealer, let myIndex = viewModel.myIndex, dealer == myIndex else { return nil }
+        let round = room.round ?? 0
+        let sum = viewModel.players.reduce(0) { acc, player in
+            player.playerIndex == dealer ? acc : acc + (player.bid ?? 0)
+        }
+        let forbidden = round - sum
+        guard forbidden >= 0, forbidden <= round else { return nil }
+        return forbidden
+    }
+
     private func biddingArea(room: Room) -> some View {
-        VStack(spacing: 10) {
+        let forbidden = dealerForbiddenBid(room: room)
+        return VStack(spacing: 10) {
             if viewModel.isMyTurn {
                 Text("Wie viele Stiche bietest du?")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(Theme.ivory)
+                if let forbidden {
+                    Text("⚠ Stichzwang: \(forbidden) ist verboten")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(Theme.error)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(0...(room.round ?? 0), id: \.self) { n in
+                            let isForbidden = n == forbidden
                             Button {
                                 Task { await viewModel.bid(n) }
                             } label: {
@@ -710,8 +738,9 @@ struct GameView: View {
                                     .foregroundColor(Theme.bgDark)
                                     .background(Theme.gold)
                                     .clipShape(Circle())
+                                    .opacity(isForbidden ? 0.25 : 1)
                             }
-                            .disabled(viewModel.isSubmitting)
+                            .disabled(viewModel.isSubmitting || isForbidden)
                         }
                     }
                     .padding(.horizontal, 16)

@@ -30,6 +30,28 @@ extension Card {
     }
 }
 
+/// Mirrors CardView.tsx's `small` prop - two fixed sizes instead of one, so
+/// a context that needs the smaller web size (trick area, Indianer-Poker's
+/// visible opponent card, witch-swap picks) doesn't have to fake it with
+/// `.scaleEffect()` on the large size, which also shrinks stroke widths and
+/// corner radii out of proportion and crops the corner labels illegibly
+/// small. `.large` is the own-hand/picker size (own hand was previously
+/// stuck at the same cramped 44x60 everything else used).
+enum CardSize {
+    case large, small
+
+    var frame: CGSize {
+        switch self {
+        case .large: return CGSize(width: 72, height: 100)
+        case .small: return CGSize(width: 40, height: 56)
+        }
+    }
+
+    var labelFontSize: CGFloat { self == .large ? 12 : 9 }
+    var sigilFontSize: CGFloat { self == .large ? 8 : 6 }
+    var cornerRadius: CGFloat { self == .large ? Theme.Radius.md : Theme.Radius.sm }
+}
+
 /// Illustrated card visual - the same WebP art the web app uses
 /// (Resources/Cards/, see Card+Art.swift), with the same two corner label
 /// pills (value + house sigil) CardView.tsx overlays on top of its art.
@@ -46,6 +68,7 @@ struct CardChipView: View {
     /// Trick-end winning card: pulsing gold glow, mirrors CardView.tsx's
     /// `winner` prop/cardGlow animation.
     var winner: Bool = false
+    var size: CardSize = .large
 
     private var showsSigil: Bool {
         card.suit != nil && card.specialType == nil && card.type == "number"
@@ -64,7 +87,7 @@ struct CardChipView: View {
                     // Matches CardView.tsx's objectPosition "center top" -
                     // the art is portrait character art, cropping from the
                     // center would cut off faces more often than feet.
-                    .frame(width: 44, height: 60, alignment: .top)
+                    .frame(width: size.frame.width, height: size.frame.height, alignment: .top)
                     .clipped()
                 cornerLabel(rotated: false)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -74,11 +97,11 @@ struct CardChipView: View {
                 textFallback
             }
         }
-        .frame(width: 44, height: 60)
+        .frame(width: size.frame.width, height: size.frame.height)
         .background(Theme.bgPanel)
-        .cornerRadius(Theme.Radius.sm)
+        .cornerRadius(size.cornerRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+            RoundedRectangle(cornerRadius: size.cornerRadius)
                 .stroke(winner ? Theme.gold : isSelected ? Theme.gold : Theme.gold.opacity(0.25), lineWidth: winner || isSelected ? 2 : 1)
         )
         .shadow(color: winner ? Theme.gold.opacity(glow ? 0.75 : 0.25) : .clear, radius: winner ? (glow ? 10 : 4) : 0)
@@ -94,7 +117,7 @@ struct CardChipView: View {
         ZStack {
             Rectangle().fill(Theme.bgDark)
             Text("⚡")
-                .font(.system(size: 16))
+                .font(.system(size: size == .large ? 20 : 14))
                 .foregroundColor(Theme.gold.opacity(0.35))
         }
     }
@@ -102,10 +125,10 @@ struct CardChipView: View {
     private var textFallback: some View {
         VStack(spacing: 2) {
             Text(card.label)
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .font(.system(size: size == .large ? 22 : 15, weight: .heavy, design: .rounded))
             if showsSigil {
                 Text(Theme.suitSymbol(card.suit))
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: size == .large ? 12 : 9, weight: .bold))
             }
         }
         .foregroundColor(card.displayColor)
@@ -114,11 +137,11 @@ struct CardChipView: View {
     private func cornerLabel(rotated: Bool) -> some View {
         VStack(spacing: 0) {
             Text(card.label)
-                .font(.system(size: 9, weight: .heavy, design: .serif))
+                .font(.system(size: size.labelFontSize, weight: .heavy, design: .serif))
                 .foregroundColor(card.displayColor)
             if showsSigil {
                 Text(Theme.suitSymbol(card.suit))
-                    .font(.system(size: 6, weight: .bold))
+                    .font(.system(size: size.sigilFontSize, weight: .bold))
                     .foregroundColor(card.displayColor)
             }
         }
@@ -132,11 +155,17 @@ struct CardChipView: View {
 }
 
 #Preview {
-    HStack {
-        CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil))
-        CardChipView(card: Card(id: "wizard-0", type: "wizard", suit: nil, value: 14, specialType: nil))
-        CardChipView(card: Card(id: "dragon", type: "special", suit: nil, value: 0, specialType: "dragon"))
-        CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil), faceDown: true)
+    VStack {
+        HStack {
+            CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil))
+            CardChipView(card: Card(id: "wizard-0", type: "wizard", suit: nil, value: 14, specialType: nil))
+            CardChipView(card: Card(id: "dragon", type: "special", suit: nil, value: 0, specialType: "dragon"))
+            CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil), faceDown: true)
+        }
+        HStack {
+            CardChipView(card: Card(id: "red-7", type: "number", suit: "red", value: 7, specialType: nil), size: .small)
+            CardChipView(card: Card(id: "wizard-0", type: "wizard", suit: nil, value: 14, specialType: nil), size: .small)
+        }
     }
     .padding()
     .background(Theme.bgDark)
