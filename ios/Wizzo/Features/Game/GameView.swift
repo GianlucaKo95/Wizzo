@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// The header's actual rendered height, measured via a transparent
+/// GeometryReader in its own .background() - see header(room:) and
+/// opponentSeatsOverlay(room:)'s headerHeight-based clamp.
+private struct HeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 100
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct GameView: View {
     @StateObject private var viewModel: GameViewModel
     // Passed down from LobbyView, not owned here - see VoiceChatManager's
@@ -13,6 +23,14 @@ struct GameView: View {
     @State private var witchTakeCardId: String?
     @State private var showLog = false
     @State private var showScoresheet = false
+    /// Actual measured header height (title row + icon row), via
+    /// HeaderHeightKey below - opponentSeatsOverlay uses this to guarantee a
+    /// top-row seat badge never renders under the header, regardless of
+    /// player count (which row - "top"/"top-left"/"top-right" - lands at
+    /// screen-center x depends on it) or whether an Indianer-Poker card is
+    /// showing above the badge. The fallback value only matters for the one
+    /// frame before the real measurement arrives.
+    @State private var headerHeight: CGFloat = 100
 
     init(roomId: UUID, onLeave: @escaping () -> Void, voice: VoiceChatManager) {
         _viewModel = StateObject(wrappedValue: GameViewModel(roomId: roomId))
@@ -103,6 +121,7 @@ struct GameView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(tableBackground)
+        .onPreferenceChange(HeaderHeightKey.self) { headerHeight = $0 }
         .sheet(isPresented: $showLog) { logSheet }
         .sheet(isPresented: $showScoresheet) { scoresheet(room: room) }
     }
@@ -210,9 +229,27 @@ struct GameView: View {
     /// The opponent seats floated around the table - mirrors the
     /// `seats.filter(position !== "bottom").map(PlayerSeat)` loop in
     /// App.tsx. The viewer's own seat is never in here (mySeatBadge below).
+    ///
+    /// Centering the header's icon row (see toolbarRow) fixed it covering
+    /// the top-right seat for 3 players, but a plain fixed y-fraction for
+    /// "top"/"top-left"/"top-right" isn't enough on its own: with 2, 4, or 6
+    /// players the "top" position lands at screen-center x too, exactly
+    /// where the (now centered) icon row sits. clampedTopY below uses the
+    /// header's *actual measured* height (headerHeight, via HeaderHeightKey)
+    /// so a top-row seat's own top edge is guaranteed to clear the header
+    /// regardless of player count, device size, or whether an
+    /// Indianer-Poker card is showing above the badge (which adds real
+    /// height on top of it) - not just tuned to look right in one
+    /// screenshot.
     private func opponentSeatsOverlay(room: Room) -> some View {
         GeometryReader { geo in
             ForEach(seatEntries(room: room).filter { $0.position != "bottom" }, id: \.player.id) { entry in
+                let hasCardAbove = indianPokerVisibleCard(for: entry.player, room: room) != nil
+                let isTopRow = ["top", "top-left", "top-right"].contains(entry.position)
+                let halfContentHeight: CGFloat = hasCardAbove ? 57 : 28
+                let clampedTopY = headerHeight + 16 + halfContentHeight
+                let fractionY = geo.size.height * seatAnchor(for: entry.position).y
+                let y = isTopRow ? max(fractionY, clampedTopY) : fractionY
                 VStack(spacing: 4) {
                     if let visible = indianPokerVisibleCard(for: entry.player, room: room) {
                         CardChipView(card: visible, size: .small)
@@ -221,7 +258,7 @@ struct GameView: View {
                 }
                 .position(
                     x: geo.size.width * seatAnchor(for: entry.position).x,
-                    y: geo.size.height * seatAnchor(for: entry.position).y
+                    y: y
                 )
             }
         }
@@ -361,13 +398,22 @@ struct GameView: View {
         .background(
             LinearGradient(colors: [Color.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom)
         )
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: HeaderHeightKey.self, value: geo.size.height)
+            }
+        )
     }
 
     /// Icon row below the title bar: voice controls, Log, Spielblatt,
     /// Verlassen - mirrors the right-hand icon cluster in App.tsx's header
     /// (mic/history/scoresheet/leave, same order), as circular gold-ringed
     /// buttons instead of bare SF Symbols for closer visual parity with the
-    /// web's `goldBtn()` pill styling.
+    /// web's `goldBtn()` pill styling. Centered under WIZZO rather than
+    /// right-aligned under the trump card - right-aligned put it directly
+    /// over the top-right seat badge's column (seatAnchor's x: 0.78),
+    /// half-covering it; centering clears both the top-left and top-right
+    /// seat columns without needing to shrink anything else.
     private var toolbarRow: some View {
         HStack(spacing: 8) {
             Spacer()
@@ -383,6 +429,7 @@ struct GameView: View {
                     onLeave()
                 }
             }
+            Spacer()
         }
     }
 
