@@ -1,6 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="80" fill="#10161A"/>
-  <rect x="4" y="4" width="504" height="504" rx="76" fill="none" stroke="#C9A84C" stroke-width="6"/>
-  <text x="256" y="340" font-size="280" text-anchor="middle" dominant-baseline="middle">🧙</text>
-  <text x="256" y="460" font-family="serif" font-size="52" font-weight="bold" fill="#C9A84C" text-anchor="middle" letter-spacing="6">WIZZO</text>
+  <defs>
+    <radialGradient id="bg"><stop stop-color="#1a2428"/><stop offset="1" stop-color="#0d1215"/></radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe08a"/><stop offset=".48" stop-color="#d49a36"/><stop offset="1" stop-color="#8f571c"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="92" fill="url(#bg)"/>
+  <g fill="url(#gold)" stroke="#f7d27d" stroke-width="2" stroke-linejoin="round">
+    <path d="M171 337 C198 273 231 205 286 145 C319 109 372 132 384 177 C394 216 373 246 351 241 C333 237 335 216 346 207 C328 221 312 238 294 256 C327 282 350 309 364 340 Z"/>
+    <path d="M163 335 C232 314 310 321 391 354 L408 393 C324 365 239 364 144 387 Z"/>
+    <path d="M106 365 C178 337 237 365 296 393 C356 421 414 385 432 394 C417 446 334 459 269 433 C197 404 141 371 97 404 C78 390 83 374 106 365 Z"/>
+  </g>
+  <g fill="#ffe08a">
+    <path d="M151 127 L160 161 L194 170 L160 179 L151 213 L142 179 L108 170 L142 161 Z"/>
+    <path d="M401 238 L407 260 L429 266 L407 272 L401 294 L395 272 L373 266 L395 260 Z"/>
+    <path d="M119 248 L124 266 L142 271 L124 276 L119 294 L114 276 L96 271 L114 266 Z"/>
+  </g>
 </svg>
